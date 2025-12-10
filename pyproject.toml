@@ -1,0 +1,76 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "search-ads-cli"
+version = "0.1.0"
+description = "Command-line interface for Apple Search Ads campaign management"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.13"
+authors = [{ name = "Peth Pty Ltd", email = "hello@peth.com.au" }]
+keywords = [
+    "apple",
+    "search-ads",
+    "advertising",
+    "cli",
+    "campaign-management",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+dependencies = [
+    "search-ads-api>=0.1.0",
+    "typer>=0.13.0",
+    "rich>=13.9.0",
+]
+
+[tool.uv.sources]
+search-ads-api = { path = "../search-ads-api", editable = true }
+
+[project.scripts]
+asa = "search_ads_cli:app"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "mypy>=1.13.0",
+    "ruff>=0.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/SamPetherbridge/search-ads-cli"
+Repository = "https://github.com/SamPetherbridge/search-ads-cli"
+Issues = "https://github.com/SamPetherbridge/search-ads-cli/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["search_ads_cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP", "ARG", "SIM"]
+
+[tool.coverage.run]
+source = ["search_ads_cli"]
+branch = true
