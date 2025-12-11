@@ -959,3 +959,314 @@ def expand_campaign(
     except AppleSearchAdsError as e:
         handle_api_error(e)
         raise typer.Exit(1) from None
+
+
+@dataclass
+class KeywordBidAnalysis:
+    """Analysis of a keyword's bid performance."""
+
+    campaign_id: int
+    campaign_name: str
+    ad_group_id: int
+    ad_group_name: str
+    keyword_id: int
+    keyword_text: str
+    current_bid: Decimal
+    currency: str
+    impressions: int
+    taps: int
+    conversions: int
+    spend: Decimal
+    avg_cpt: Decimal | None  # Average cost per tap
+    ttr: float | None  # Tap-through rate
+    cr: float | None  # Conversion rate
+    country: str
+
+    @property
+    def bid_strength(self) -> str:
+        """Estimate bid strength based on performance metrics.
+
+        Since Apple doesn't expose bidStrength via API, we estimate:
+        - STRONG: High impressions, good TTR
+        - MODERATE: Decent impressions, average TTR
+        - WEAK: Low impressions or poor TTR
+        """
+        if self.impressions == 0:
+            return "UNKNOWN"
+
+        # Calculate TTR if we have data
+        ttr = self.ttr or 0
+
+        if self.impressions >= 1000 and ttr >= 0.05:
+            return "STRONG"
+        elif self.impressions >= 100 and ttr >= 0.02:
+            return "MODERATE"
+        elif self.impressions > 0:
+            return "WEAK"
+        return "UNKNOWN"
+
+    @property
+    def recommendation(self) -> str:
+        """Suggest bid adjustment based on performance."""
+        strength = self.bid_strength
+        if strength == "STRONG":
+            return "Consider increase for more volume"
+        elif strength == "MODERATE":
+            return "Monitor performance"
+        elif strength == "WEAK":
+            return "Increase bid or review keyword"
+        return "Need more data"
+
+
+@app.command("bid-review")
+def review_keyword_bids(
+    country: Annotated[
+        str | None,
+        typer.Option("--country", "-c", help="Filter by country code"),
+    ] = None,
+    days: Annotated[
+        int,
+        typer.Option("--days", "-d", help="Days of performance data to analyze"),
+    ] = 30,
+    weak_only: Annotated[
+        bool,
+        typer.Option("--weak", "-w", help="Only show keywords with weak bid strength"),
+    ] = False,
+    min_impressions: Annotated[
+        int,
+        typer.Option("--min-impressions", help="Minimum impressions to include"),
+    ] = 0,
+    limit: Annotated[
+        int,
+        typer.Option("--limit", "-l", help="Max keywords to display"),
+    ] = 50,
+    output: Annotated[
+        str | None,
+        typer.Option("--output", "-o", help="Export to CSV file"),
+    ] = None,
+) -> None:
+    """Review keyword bids and their performance.
+
+    Analyzes keyword performance metrics (impressions, taps, conversions)
+    to estimate bid strength and suggest optimizations.
+
+    Since Apple doesn't expose bidStrength via API, this command estimates
+    it based on:
+    - Impression volume (higher = stronger bid)
+    - Tap-through rate (higher = better relevance/position)
+    - Conversion metrics
+
+    Examples:
+        asa optimize bid-review --country US
+        asa optimize bid-review --country AU --weak  # Focus on weak performers
+        asa optimize bid-review --days 14 --min-impressions 100
+        asa optimize bid-review --output keywords.csv
+    """
+    client = get_client()
+
+    end_date = date.today() - timedelta(days=1)
+    start_date = end_date - timedelta(days=days)
+
+    try:
+        with client:
+            # Get enabled campaigns
+            with spinner("Loading campaigns..."):
+                campaigns = list(client.campaigns.find(Selector().where("status", "==", "ENABLED")))
+
+            if country:
+                country = country.upper()
+                campaigns = [c for c in campaigns if country in [cc.upper() for cc in c.countries_or_regions]]
+
+            if not campaigns:
+                print_warning("No enabled campaigns found" + (f" for {country}" if country else ""))
+                return
+
+            print_info(f"Analyzing {len(campaigns)} campaigns...")
+
+            # Collect keyword performance data
+            keyword_analyses: list[KeywordBidAnalysis] = []
+
+            for campaign in campaigns:
+                campaign_country = campaign.countries_or_regions[0] if campaign.countries_or_regions else "?"
+
+                with spinner(f"Fetching keyword data for {campaign.name[:30]}..."):
+                    try:
+                        # Get keyword report
+                        report = client.reports.keywords(
+                            campaign_id=campaign.id,
+                            start_date=start_date,
+                            end_date=end_date,
+                            granularity=GranularityType.DAILY,
+                        )
+
+                        for row in report.row:
+                            if not row.metadata.keyword or not row.total:
+                                continue
+
+                            impressions = row.total.impressions or 0
+                            taps = row.total.taps or 0
+                            conversions = row.total.installs or 0
+                            spend_amount = row.total.local_spend.amount if row.total.local_spend else "0"
+                            spend = Decimal(str(spend_amount))
+                            currency = row.total.local_spend.currency if row.total.local_spend else "USD"
+
+                            # Calculate metrics
+                            avg_cpt = spend / taps if taps > 0 else None
+                            ttr = taps / impressions if impressions > 0 else None
+                            cr = conversions / taps if taps > 0 else None
+
+                            # Get current bid from metadata
+                            bid_amount = row.metadata.bid_amount.amount if row.metadata.bid_amount else "0"
+                            bid = Decimal(str(bid_amount))
+
+                            keyword_analyses.append(
+                                KeywordBidAnalysis(
+                                    campaign_id=campaign.id,
+                                    campaign_name=campaign.name,
+                                    ad_group_id=row.metadata.ad_group_id or 0,
+                                    ad_group_name=row.metadata.ad_group_name or "",
+                                    keyword_id=row.metadata.keyword_id or 0,
+                                    keyword_text=row.metadata.keyword,
+                                    current_bid=bid,
+                                    currency=currency,
+                                    impressions=impressions,
+                                    taps=taps,
+                                    conversions=conversions,
+                                    spend=spend,
+                                    avg_cpt=avg_cpt,
+                                    ttr=ttr,
+                                    cr=cr,
+                                    country=campaign_country,
+                                )
+                            )
+
+                    except AppleSearchAdsError:
+                        continue
+
+            if not keyword_analyses:
+                print_warning("No keyword data found")
+                return
+
+            # Apply filters
+            if min_impressions > 0:
+                keyword_analyses = [k for k in keyword_analyses if k.impressions >= min_impressions]
+
+            if weak_only:
+                keyword_analyses = [k for k in keyword_analyses if k.bid_strength == "WEAK"]
+
+            if not keyword_analyses:
+                print_warning("No keywords match the specified filters")
+                return
+
+            # Sort by impressions (most first)
+            keyword_analyses.sort(key=lambda k: k.impressions, reverse=True)
+
+            # Export to CSV if requested
+            if output:
+                try:
+                    import csv
+
+                    with open(output, "w", newline="") as f:
+                        writer = csv.writer(f)
+                        writer.writerow(
+                            [
+                                "campaign_name",
+                                "ad_group_name",
+                                "keyword",
+                                "country",
+                                "current_bid",
+                                "currency",
+                                "impressions",
+                                "taps",
+                                "conversions",
+                                "spend",
+                                "avg_cpt",
+                                "ttr",
+                                "cr",
+                                "bid_strength",
+                                "recommendation",
+                            ]
+                        )
+                        for k in keyword_analyses:
+                            writer.writerow(
+                                [
+                                    k.campaign_name,
+                                    k.ad_group_name,
+                                    k.keyword_text,
+                                    k.country,
+                                    k.current_bid,
+                                    k.currency,
+                                    k.impressions,
+                                    k.taps,
+                                    k.conversions,
+                                    k.spend,
+                                    k.avg_cpt,
+                                    f"{k.ttr:.4f}" if k.ttr else "",
+                                    f"{k.cr:.4f}" if k.cr else "",
+                                    k.bid_strength,
+                                    k.recommendation,
+                                ]
+                            )
+                    print_success(f"Exported {len(keyword_analyses)} keywords to {output}")
+                except Exception as e:
+                    print_error("Export failed", str(e))
+
+            # Display table
+            display_count = min(limit, len(keyword_analyses))
+
+            table = Table(title=f"Keyword Bid Review ({days} days)")
+            table.add_column("Keyword", style="cyan", max_width=25)
+            table.add_column("Campaign", style="magenta", max_width=20)
+            table.add_column("Country", width=4)
+            table.add_column("Bid", justify="right", width=8)
+            table.add_column("Impr", justify="right", width=8)
+            table.add_column("TTR", justify="right", width=6)
+            table.add_column("Strength", justify="center", width=10)
+
+            for k in keyword_analyses[:display_count]:
+                # Color code strength
+                strength = k.bid_strength
+                if strength == "STRONG":
+                    strength_display = "[green]STRONG[/green]"
+                elif strength == "MODERATE":
+                    strength_display = "[yellow]MODERATE[/yellow]"
+                elif strength == "WEAK":
+                    strength_display = "[red]WEAK[/red]"
+                else:
+                    strength_display = "[dim]?[/dim]"
+
+                ttr_display = f"{k.ttr * 100:.1f}%" if k.ttr else "—"
+
+                table.add_row(
+                    k.keyword_text[:25],
+                    k.campaign_name[:20],
+                    k.country,
+                    f"{k.current_bid:.2f}",
+                    f"{k.impressions:,}",
+                    ttr_display,
+                    strength_display,
+                )
+
+            console.print(table)
+
+            if len(keyword_analyses) > display_count:
+                print_info(f"Showing {display_count} of {len(keyword_analyses)} keywords. Use --limit to see more.")
+
+            # Summary
+            strong = sum(1 for k in keyword_analyses if k.bid_strength == "STRONG")
+            moderate = sum(1 for k in keyword_analyses if k.bid_strength == "MODERATE")
+            weak = sum(1 for k in keyword_analyses if k.bid_strength == "WEAK")
+
+            console.print("\n[dim]Bid Strength Summary:[/dim]")
+            console.print(f"  [green]Strong:[/green] {strong}")
+            console.print(f"  [yellow]Moderate:[/yellow] {moderate}")
+            console.print(f"  [red]Weak:[/red] {weak}")
+
+            if weak > 0:
+                console.print(
+                    f"\n[yellow]💡 {weak} keywords have weak bid strength - consider increasing bids[/yellow]"
+                )
+
+    except AppleSearchAdsError as e:
+        handle_api_error(e)
+        raise typer.Exit(1) from None

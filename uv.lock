@@ -45,7 +45,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asa-api-client", editable = "../search-ads-api" },
+    { name = "asa-api-client", specifier = ">=0.1.2" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },
@@ -59,36 +59,18 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "asa-api-client"
-version = "0.1.1"
-source = { editable = "../search-ads-api" }
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyjwt", extra = ["crypto"] },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.27.0" },
-    { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6.0" },
-    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5.0" },
-    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.27.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
-    { name = "pandas", marker = "extra == 'dev'", specifier = ">=2.2.0" },
-    { name = "pandas", marker = "extra == 'pandas'", specifier = ">=2.2.0" },
-    { name = "pandas-stubs", marker = "extra == 'dev'", specifier = ">=2.2.0" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0.0" },
-    { name = "pydantic", specifier = ">=2.10.0" },
-    { name = "pydantic-settings", specifier = ">=2.6.0" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
-    { name = "pytest-httpx", marker = "extra == 'dev'", specifier = ">=0.34.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
+sdist = { url = "https://files.pythonhosted.org/packages/39/53/dd96e1aebca209cfb080bfcf7113113efb6f51d5c0df785c3ea7c31c535c/asa_api_client-0.1.2.tar.gz", hash = "sha256:c5511e1ea9cdcb8be5bbad7a6ca28b7198a514f2cdebf6f457959fbb9dfedae7", size = 101594, upload-time = "2025-12-11T02:16:47.635Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/78/07/b10c2827ba6ade38aa94cc9250bdb440cc7630c9460f095a449699e4391c/asa_api_client-0.1.2-py3-none-any.whl", hash = "sha256:c40e6cafa3772ddd68d33bc05bcc8bca797582dd29827a185087acb2160ace53", size = 46735, upload-time = "2025-12-11T02:16:45.963Z" },
 ]
-provides-extras = ["pandas", "dev", "docs"]
 
 [[package]]
 name = "certifi"
