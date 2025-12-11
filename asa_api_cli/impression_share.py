@@ -413,10 +413,10 @@ def share_summary(
         typer.Option("--days", "-d", help="Number of days to analyze (max 30)"),
     ] = 7,
 ) -> None:
-    """Show impression share summary by country.
+    """Show impression share summary by app and country.
 
     Provides a high-level overview of your impression share performance
-    grouped by country/region.
+    grouped by app, then by country/region.
 
     Examples:
         asa impression-share summary --days 14
@@ -449,14 +449,18 @@ def share_summary(
 
     data = _parse_report_data(report)
 
-    # Aggregate by country
-    by_country: dict[str, list[SearchTermShareData]] = {}
+    # Aggregate by app, then by country
+    by_app: dict[str, dict[str, list[SearchTermShareData]]] = {}
     for item in data:
-        if item.country not in by_country:
-            by_country[item.country] = []
-        by_country[item.country].append(item)
+        app_name = item.app_name or "Unknown"
+        if app_name not in by_app:
+            by_app[app_name] = {}
+        if item.country not in by_app[app_name]:
+            by_app[app_name][item.country] = []
+        by_app[app_name][item.country].append(item)
 
     table = Table(title=f"Impression Share Summary ({days} days)")
+    table.add_column("App", style="magenta", no_wrap=True)
     table.add_column("Country", style="cyan")
     table.add_column("Search Terms", justify="right")
     table.add_column("Avg Share", justify="right")
@@ -464,35 +468,54 @@ def share_summary(
     table.add_column("30-50%", justify="right", style="yellow")
     table.add_column(">50%", justify="right", style="green")
 
-    # Calculate stats per country
-    summary_rows = []
-    for country, items in by_country.items():
-        unique_terms = len({i.search_term for i in items})
-        avg_shares = [i.avg_share for i in items if i.avg_share > 0]
-        avg_share = sum(avg_shares) / len(avg_shares) if avg_shares else 0
+    # Sort apps alphabetically
+    total_terms = 0
+    total_countries = set()
 
-        low_count = sum(1 for i in items if i.high_share and i.high_share < 0.3)
-        mid_count = sum(1 for i in items if i.high_share and 0.3 <= i.high_share < 0.5)
-        high_count = sum(1 for i in items if i.high_share and i.high_share >= 0.5)
+    for app_name in sorted(by_app.keys()):
+        countries_data = by_app[app_name]
 
-        summary_rows.append(
-            (country, unique_terms, avg_share, low_count, mid_count, high_count)
-        )
+        # Calculate stats per country for this app
+        country_rows = []
+        for country, items in countries_data.items():
+            unique_terms = len({i.search_term for i in items})
+            avg_shares = [i.avg_share for i in items if i.avg_share > 0]
+            avg_share = sum(avg_shares) / len(avg_shares) if avg_shares else 0
 
-    # Sort by number of terms
-    summary_rows.sort(key=lambda x: x[1], reverse=True)
+            low_count = sum(1 for i in items if i.high_share and i.high_share < 0.3)
+            mid_count = sum(
+                1 for i in items if i.high_share and 0.3 <= i.high_share < 0.5
+            )
+            high_count = sum(1 for i in items if i.high_share and i.high_share >= 0.5)
 
-    for country, terms, avg, low, mid, high in summary_rows:
-        table.add_row(
-            country,
-            str(terms),
-            f"{avg * 100:.0f}%",
-            str(low),
-            str(mid),
-            str(high),
-        )
+            country_rows.append(
+                (country, unique_terms, avg_share, low_count, mid_count, high_count)
+            )
+            total_terms += unique_terms
+            total_countries.add(country)
+
+        # Sort by number of terms within each app
+        country_rows.sort(key=lambda x: x[1], reverse=True)
+
+        # Add rows with app name on first row only
+        for i, (country, terms, avg, low, mid, high) in enumerate(country_rows):
+            table.add_row(
+                app_name[:25] if i == 0 else "",
+                country,
+                str(terms),
+                f"{avg * 100:.0f}%",
+                str(low),
+                str(mid),
+                str(high),
+            )
+
+        # Add separator between apps (if not last app)
+        if app_name != sorted(by_app.keys())[-1]:
+            table.add_row("", "", "", "", "", "", "", end_section=True)
 
     console.print(table)
 
-    total_terms = sum(r[1] for r in summary_rows)
-    print_info(f"\nTotal: {total_terms} unique search terms across {len(by_country)} countries")
+    print_info(
+        f"\nTotal: {total_terms} search terms across {len(by_app)} apps "
+        f"and {len(total_countries)} countries"
+    )
