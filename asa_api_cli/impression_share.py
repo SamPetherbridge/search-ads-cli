@@ -112,18 +112,19 @@ def _aggregate_by_search_term(
     return aggregated
 
 
-def _display_share_table(data: list[SearchTermShareData]) -> None:
+def _display_share_table(data: list[SearchTermShareData], limit: int = 100) -> None:
     """Display impression share data in a rich table."""
     table = Table(title="Impression Share Analysis", show_lines=False)
 
-    table.add_column("Search Term", style="cyan", no_wrap=False, max_width=40)
+    table.add_column("App", style="magenta", no_wrap=True, max_width=25)
+    table.add_column("Search Term", style="cyan", no_wrap=False, max_width=35)
     table.add_column("Country", style="dim", width=4)
     table.add_column("Share", justify="right", style="green", width=10)
     table.add_column("Rank", justify="center", width=4)
     table.add_column("Pop", justify="center", width=3)
     table.add_column("Date", style="dim", width=10)
 
-    for row in data[:50]:  # Limit to 50 rows
+    for row in data[:limit]:
         # Color share based on value
         share_style = "green"
         if row.high_share:
@@ -133,7 +134,8 @@ def _display_share_table(data: list[SearchTermShareData]) -> None:
                 share_style = "yellow"
 
         table.add_row(
-            row.search_term[:40],
+            row.app_name[:25] if row.app_name else "",
+            row.search_term[:35],
             row.country,
             f"[{share_style}]{row.share_range}[/{share_style}]",
             row.rank_display,
@@ -143,8 +145,8 @@ def _display_share_table(data: list[SearchTermShareData]) -> None:
 
     console.print(table)
 
-    if len(data) > 50:
-        print_info(f"Showing 50 of {len(data)} results. Use --output to export all.")
+    if len(data) > limit:
+        print_info(f"Showing {limit} of {len(data)} results. Use --limit or --output to see all.")
 
 
 @app.command("analyze")
@@ -168,6 +170,14 @@ def analyze_impression_share(
         str | None,
         typer.Option("--search", "-s", help="Filter by search term (partial match)"),
     ] = None,
+    app: Annotated[
+        str | None,
+        typer.Option("--app", "-a", help="Filter by app name (partial match)"),
+    ] = None,
+    limit: Annotated[
+        int,
+        typer.Option("--limit", "-l", help="Max rows to display (0 for all)"),
+    ] = 100,
     output: Annotated[
         str | None,
         typer.Option("--output", "-o", help="Export to CSV file"),
@@ -182,6 +192,7 @@ def analyze_impression_share(
         asa impression-share analyze --days 14
         asa impression-share analyze --country US --min-share 30
         asa impression-share analyze --search "calculator" --output report.csv
+        asa impression-share analyze --app "Chippy" --limit 200
     """
     client = get_client()
 
@@ -219,9 +230,14 @@ def analyze_impression_share(
     # Parse data
     data = _parse_report_data(report)
 
-    # Aggregate by search term (keep latest)
+    # Aggregate by search term + app (keep latest)
     aggregated = _aggregate_by_search_term(data)
     data = list(aggregated.values())
+
+    # Apply app filter
+    if app:
+        app_lower = app.lower()
+        data = [d for d in data if d.app_name and app_lower in d.app_name.lower()]
 
     # Apply search filter
     if search:
@@ -276,7 +292,9 @@ def analyze_impression_share(
         except Exception as e:
             print_error("Export failed", str(e))
 
-    _display_share_table(data)
+    # Use limit=0 to show all, otherwise use specified limit
+    display_limit = len(data) if limit == 0 else limit
+    _display_share_table(data, limit=display_limit)
 
     # Summary
     low_share_count = sum(1 for d in data if d.high_share and d.high_share < 0.3)
