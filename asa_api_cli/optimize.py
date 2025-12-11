@@ -666,7 +666,7 @@ def expand_campaign(
             # Step 2: Get target country (interactive if not provided)
             if not target_country:
                 target_country = typer.prompt("Target country code (e.g., CA, DE, FR)")
-            target_country = target_country.upper()
+            target_country = target_country.upper() if target_country else ""
 
             # Get adam_id and currency from first source
             adam_id = source_campaign_data[0].adam_id

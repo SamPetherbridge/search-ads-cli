@@ -630,6 +630,10 @@ def create_brand_campaigns(
             else:
                 adam_id, app_name, ref_currency = _select_app_interactive(client)
 
+            if adam_id is None:
+                print_error("No app selected", "Cannot continue without an app")
+                return
+
             # Step 4: Get budget and bid
             if daily_budget is not None:
                 final_budget = Decimal(str(daily_budget))

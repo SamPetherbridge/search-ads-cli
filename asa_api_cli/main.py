@@ -32,9 +32,7 @@ app.add_typer(ad_groups.app, name="ad-groups", help="Manage ad groups")
 app.add_typer(keywords.app, name="keywords", help="Manage keywords")
 app.add_typer(reports.app, name="reports", help="Generate reports")
 app.add_typer(optimize.app, name="optimize", help="Optimization tools")
-app.add_typer(
-    impression_share.app, name="impression-share", help="Impression share analysis"
-)
+app.add_typer(impression_share.app, name="impression-share", help="Impression share analysis")
 
 
 def version_callback(value: bool) -> None:

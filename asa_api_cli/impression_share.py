@@ -298,9 +298,7 @@ def analyze_impression_share(
 
     # Summary
     low_share_count = sum(1 for d in data if d.high_share and d.high_share < 0.3)
-    mid_share_count = sum(
-        1 for d in data if d.high_share and 0.3 <= d.high_share < 0.5
-    )
+    mid_share_count = sum(1 for d in data if d.high_share and 0.3 <= d.high_share < 0.5)
     high_share_count = sum(1 for d in data if d.high_share and d.high_share >= 0.5)
 
     print_info(f"\nTotal unique search terms: {len(data)}")
@@ -483,14 +481,10 @@ def share_summary(
             avg_share = sum(avg_shares) / len(avg_shares) if avg_shares else 0
 
             low_count = sum(1 for i in items if i.high_share and i.high_share < 0.3)
-            mid_count = sum(
-                1 for i in items if i.high_share and 0.3 <= i.high_share < 0.5
-            )
+            mid_count = sum(1 for i in items if i.high_share and 0.3 <= i.high_share < 0.5)
             high_count = sum(1 for i in items if i.high_share and i.high_share >= 0.5)
 
-            country_rows.append(
-                (country, unique_terms, avg_share, low_count, mid_count, high_count)
-            )
+            country_rows.append((country, unique_terms, avg_share, low_count, mid_count, high_count))
             total_terms += unique_terms
             total_countries.add(country)
 
@@ -515,7 +509,4 @@ def share_summary(
 
     console.print(table)
 
-    print_info(
-        f"\nTotal: {total_terms} search terms across {len(by_app)} apps "
-        f"and {len(total_countries)} countries"
-    )
+    print_info(f"\nTotal: {total_terms} search terms across {len(by_app)} apps and {len(total_countries)} countries")
