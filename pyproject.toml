@@ -28,7 +28,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "asa-api-client>=0.1.4",
+    "asa-api-client>=0.1.5",
     "typer>=0.13.0",
     "rich>=13.9.0",
 ]
