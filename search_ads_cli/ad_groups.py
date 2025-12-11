@@ -1,8 +1,10 @@
 """Ad Group CLI commands."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
+from asa_api_client.exceptions import AppleSearchAdsError
+from asa_api_client.models import AdGroupStatus, AdGroupUpdate, Money, Selector
 
 from search_ads_cli.utils import (
     OutputFormat,
@@ -18,8 +20,6 @@ from search_ads_cli.utils import (
     print_warning,
     spinner,
 )
-from search_ads_api.exceptions import AppleSearchAdsError
-from search_ads_api.models import AdGroupStatus, AdGroupUpdate, Money, Selector
 
 app = typer.Typer(help="Manage ad groups")
 
@@ -40,7 +40,7 @@ AD_GROUP_COLUMN_LABELS = {
 }
 
 
-def ad_group_to_dict(ad_group: object) -> dict:
+def ad_group_to_dict(ad_group: object) -> dict[str, Any]:
     """Convert ad group to display dictionary."""
     return {
         "id": ad_group.id,  # type: ignore
@@ -215,9 +215,7 @@ def set_default_bid(
             with spinner("Updating default bid..."):
                 ad_group = client.campaigns(campaign_id).ad_groups.update(
                     ad_group_id,
-                    data=AdGroupUpdate(
-                        default_bid_amount=Money(amount=str(bid), currency=currency)
-                    ),
+                    data=AdGroupUpdate(default_bid_amount=Money(amount=str(bid), currency=currency)),
                 )
 
             print_result_panel(
@@ -258,9 +256,7 @@ def delete_ad_group(
                 ad_group = client.campaigns(campaign_id).ad_groups.get(ad_group_id)
 
             if not force:
-                if not confirm_action(
-                    f"Are you sure you want to delete ad group '{ad_group.name}'?"
-                ):
+                if not confirm_action(f"Are you sure you want to delete ad group '{ad_group.name}'?"):
                     print_warning("Cancelled")
                     raise typer.Exit(0)
 

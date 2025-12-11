@@ -7,7 +7,7 @@
 
 A command-line interface for managing Apple Search Ads campaigns.
 
-Built on top of [search-ads-api](https://github.com/SamPetherbridge/search-ads-api).
+Built on top of [asa-api-client](https://github.com/SamPetherbridge/asa-api-client).
 
 ## Installation
 

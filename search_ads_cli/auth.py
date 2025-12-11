@@ -4,10 +4,11 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from asa_api_client import AppleSearchAdsClient, Settings
+from asa_api_client.exceptions import AppleSearchAdsError, ConfigurationError
 from pydantic import ValidationError
 from rich.table import Table
 
-from search_ads_api import AppleSearchAdsClient, Settings
 from search_ads_cli.utils import (
     console,
     print_error,
@@ -15,7 +16,6 @@ from search_ads_cli.utils import (
     print_result_panel,
     spinner,
 )
-from search_ads_api.exceptions import AppleSearchAdsError, ConfigurationError
 
 app = typer.Typer(help="Authentication commands")
 

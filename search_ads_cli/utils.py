@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 import typer
+from asa_api_client import AppleSearchAdsClient
+from asa_api_client.exceptions import AppleSearchAdsError, ConfigurationError
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import (
@@ -23,9 +25,6 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
-
-from search_ads_api import AppleSearchAdsClient
-from search_ads_api.exceptions import AppleSearchAdsError, ConfigurationError
 
 # Custom theme for consistent styling
 ASA_THEME = Theme(
@@ -55,10 +54,10 @@ def enum_value(v: Enum | str | bool) -> str:
     this helper safely extracts the string value.
     """
     if isinstance(v, Enum):
-        return v.value
+        return str(v.value)
     elif isinstance(v, bool):
         return "OPT_IN" if v else "OPT_OUT"
-    return v
+    return str(v)
 
 
 class OutputFormat(str, Enum):
@@ -96,7 +95,7 @@ def handle_api_error(e: AppleSearchAdsError) -> None:
     Args:
         e: The exception to handle.
     """
-    from search_ads_api.exceptions import ValidationError
+    from asa_api_client.exceptions import ValidationError
 
     details_parts = []
 
@@ -430,9 +429,7 @@ def parse_date(value: str) -> date:
     try:
         return date.fromisoformat(value)
     except ValueError:
-        raise typer.BadParameter(
-            f"Invalid date format: '{value}'. Use YYYY-MM-DD format."
-        ) from None
+        raise typer.BadParameter(f"Invalid date format: '{value}'. Use YYYY-MM-DD format.") from None
 
 
 def save_to_file(content: str, path: Path) -> None:

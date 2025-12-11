@@ -5,11 +5,22 @@ This module provides the `brand` command for creating brand protection campaigns
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
+from asa_api_client.exceptions import AppleSearchAdsError
+from asa_api_client.models import (
+    AdGroupCreate,
+    CampaignCreate,
+    CampaignStatus,
+    CampaignSupplySource,
+    KeywordCreate,
+    KeywordMatchType,
+    Money,
+)
 from rich.table import Table
 
+from search_ads_cli.optimize import CampaignNameParts, wait_for_resource
 from search_ads_cli.utils import (
     console,
     get_client,
@@ -20,17 +31,6 @@ from search_ads_cli.utils import (
     print_success,
     print_warning,
     spinner,
-)
-from search_ads_cli.optimize import CampaignNameParts, wait_for_resource
-from search_ads_api.exceptions import AppleSearchAdsError
-from search_ads_api.models import (
-    AdGroupCreate,
-    CampaignCreate,
-    CampaignStatus,
-    CampaignSupplySource,
-    KeywordCreate,
-    KeywordMatchType,
-    Money,
 )
 
 app = typer.Typer(
@@ -187,26 +187,97 @@ def get_country_count() -> int:
 
 # Country code to name mapping for display
 COUNTRY_NAMES = {
-    "DZ": "Algeria", "AM": "Armenia", "BH": "Bahrain", "EG": "Egypt", "GH": "Ghana",
-    "IN": "India", "IQ": "Iraq", "IL": "Israel", "JO": "Jordan", "KE": "Kenya",
-    "KW": "Kuwait", "LB": "Lebanon", "MA": "Morocco", "OM": "Oman", "PK": "Pakistan",
-    "QA": "Qatar", "SA": "Saudi Arabia", "ZA": "South Africa", "AE": "UAE",
-    "AU": "Australia", "KH": "Cambodia", "CN": "China", "HK": "Hong Kong",
-    "ID": "Indonesia", "JP": "Japan", "MO": "Macau", "MY": "Malaysia", "MN": "Mongolia",
-    "NP": "Nepal", "NZ": "New Zealand", "PH": "Philippines", "SG": "Singapore",
-    "KR": "South Korea", "LK": "Sri Lanka", "TW": "Taiwan", "TH": "Thailand", "VN": "Vietnam",
-    "AL": "Albania", "AT": "Austria", "AZ": "Azerbaijan", "BE": "Belgium", "BG": "Bulgaria",
-    "HR": "Croatia", "CY": "Cyprus", "CZ": "Czech Republic", "DK": "Denmark", "EE": "Estonia",
-    "FI": "Finland", "FR": "France", "DE": "Germany", "GR": "Greece", "HU": "Hungary",
-    "IS": "Iceland", "IE": "Ireland", "IT": "Italy", "KZ": "Kazakhstan", "KG": "Kyrgyzstan",
-    "LV": "Latvia", "LU": "Luxembourg", "NL": "Netherlands", "NO": "Norway", "PL": "Poland",
-    "PT": "Portugal", "RO": "Romania", "RU": "Russia", "SK": "Slovakia", "SI": "Slovenia",
-    "ES": "Spain", "SE": "Sweden", "CH": "Switzerland", "TR": "Türkiye", "GB": "UK",
-    "UA": "Ukraine", "UZ": "Uzbekistan",
-    "AR": "Argentina", "BO": "Bolivia", "BR": "Brazil", "CL": "Chile", "CO": "Colombia",
-    "CR": "Costa Rica", "DO": "Dominican Republic", "EC": "Ecuador", "SV": "El Salvador",
-    "GT": "Guatemala", "HN": "Honduras", "MX": "Mexico", "PA": "Panamá", "PY": "Paraguay",
-    "PE": "Peru", "CA": "Canada", "US": "United States",
+    "DZ": "Algeria",
+    "AM": "Armenia",
+    "BH": "Bahrain",
+    "EG": "Egypt",
+    "GH": "Ghana",
+    "IN": "India",
+    "IQ": "Iraq",
+    "IL": "Israel",
+    "JO": "Jordan",
+    "KE": "Kenya",
+    "KW": "Kuwait",
+    "LB": "Lebanon",
+    "MA": "Morocco",
+    "OM": "Oman",
+    "PK": "Pakistan",
+    "QA": "Qatar",
+    "SA": "Saudi Arabia",
+    "ZA": "South Africa",
+    "AE": "UAE",
+    "AU": "Australia",
+    "KH": "Cambodia",
+    "CN": "China",
+    "HK": "Hong Kong",
+    "ID": "Indonesia",
+    "JP": "Japan",
+    "MO": "Macau",
+    "MY": "Malaysia",
+    "MN": "Mongolia",
+    "NP": "Nepal",
+    "NZ": "New Zealand",
+    "PH": "Philippines",
+    "SG": "Singapore",
+    "KR": "South Korea",
+    "LK": "Sri Lanka",
+    "TW": "Taiwan",
+    "TH": "Thailand",
+    "VN": "Vietnam",
+    "AL": "Albania",
+    "AT": "Austria",
+    "AZ": "Azerbaijan",
+    "BE": "Belgium",
+    "BG": "Bulgaria",
+    "HR": "Croatia",
+    "CY": "Cyprus",
+    "CZ": "Czech Republic",
+    "DK": "Denmark",
+    "EE": "Estonia",
+    "FI": "Finland",
+    "FR": "France",
+    "DE": "Germany",
+    "GR": "Greece",
+    "HU": "Hungary",
+    "IS": "Iceland",
+    "IE": "Ireland",
+    "IT": "Italy",
+    "KZ": "Kazakhstan",
+    "KG": "Kyrgyzstan",
+    "LV": "Latvia",
+    "LU": "Luxembourg",
+    "NL": "Netherlands",
+    "NO": "Norway",
+    "PL": "Poland",
+    "PT": "Portugal",
+    "RO": "Romania",
+    "RU": "Russia",
+    "SK": "Slovakia",
+    "SI": "Slovenia",
+    "ES": "Spain",
+    "SE": "Sweden",
+    "CH": "Switzerland",
+    "TR": "Türkiye",
+    "GB": "UK",
+    "UA": "Ukraine",
+    "UZ": "Uzbekistan",
+    "AR": "Argentina",
+    "BO": "Bolivia",
+    "BR": "Brazil",
+    "CL": "Chile",
+    "CO": "Colombia",
+    "CR": "Costa Rica",
+    "DO": "Dominican Republic",
+    "EC": "Ecuador",
+    "SV": "El Salvador",
+    "GT": "Guatemala",
+    "HN": "Honduras",
+    "MX": "Mexico",
+    "PA": "Panamá",
+    "PY": "Paraguay",
+    "PE": "Peru",
+    "CA": "Canada",
+    "US": "United States",
 }
 
 
@@ -244,7 +315,7 @@ def _select_countries_interactive(include_china: bool = False) -> list[str]:
     table.add_column("Count", justify="right")
 
     presets_list = [
-        ("all", f"All countries (excl. China)", get_country_count()),
+        ("all", "All countries (excl. China)", get_country_count()),
         ("english", "English-speaking", len(COUNTRY_PRESETS["english"])),
         ("tier1", "Tier 1 (US, GB, CA, AU)", len(COUNTRY_PRESETS["tier1"])),
         ("europe", "Europe", len(COUNTRY_PRESETS["europe"])),
@@ -294,8 +365,7 @@ def _select_countries_interactive(include_china: bool = False) -> list[str]:
             continue
         if code in CHINA_COUNTRIES and not include_china:
             print_warning(
-                f"Skipping {code} - China requires special business documentation. "
-                "Use --include-china to include."
+                f"Skipping {code} - China requires special business documentation. Use --include-china to include."
             )
             continue
         if code not in countries:
@@ -304,7 +374,7 @@ def _select_countries_interactive(include_china: bool = False) -> list[str]:
     return countries
 
 
-def _select_app_interactive(client) -> tuple[int, str, str]:
+def _select_app_interactive(client: Any) -> tuple[int, str, str]:
     """Interactive app selection.
 
     Returns:
@@ -524,7 +594,9 @@ def create_brand_campaigns(
                 print_error("No countries", "No valid target countries selected")
                 raise typer.Exit(1)
 
-            print_info(f"Target countries ({len(target_countries)}): {', '.join(target_countries[:10])}{'...' if len(target_countries) > 10 else ''}")
+            countries_preview = ", ".join(target_countries[:10])
+            suffix = "..." if len(target_countries) > 10 else ""
+            print_info(f"Target countries ({len(target_countries)}): {countries_preview}{suffix}")
 
             # Step 3: Get reference campaign or select app
             ref_budget: Decimal | None = None
@@ -549,7 +621,7 @@ def create_brand_campaigns(
                     if ad_groups.data:
                         bids = [Decimal(ag.default_bid_amount.amount) for ag in ad_groups.data if ag.default_bid_amount]
                         if bids:
-                            ref_bid = sum(bids) / len(bids)
+                            ref_bid = Decimal(sum(bids) / len(bids))
 
                 print_info(f"Reference: {ref_camp.name}")
                 if ref_budget:
@@ -662,7 +734,7 @@ def create_brand_campaigns(
                 console.print()
                 console.print(f"[dim][{plan_idx}/{len(campaign_plans)}][/dim] Creating {plan.name}...")
 
-                with spinner(f"Creating campaign..."):
+                with spinner("Creating campaign..."):
                     new_campaign = client.campaigns.create(
                         CampaignCreate(
                             name=plan.name,
@@ -681,11 +753,10 @@ def create_brand_campaigns(
                 created_campaigns += 1
 
                 # Wait for campaign to be available
-                wait_for_resource(
-                    lambda cid=new_campaign.id: client.campaigns.get(cid),
-                    max_attempts=10,
-                    delay=0.5,
-                )
+                def get_campaign(cid: int = new_campaign.id) -> Any:
+                    return client.campaigns.get(cid)
+
+                wait_for_resource(get_campaign, max_attempts=10, delay=0.5)
 
                 # Create ad groups for each keyword
                 for keyword in plan.keywords:
@@ -705,16 +776,18 @@ def create_brand_campaigns(
                         created_ad_groups += 1
 
                     # Create keyword (must use bulk endpoint)
-                    client.campaigns(new_campaign.id).ad_groups(new_ag.id).keywords.create_bulk([
-                        KeywordCreate(
-                            text=keyword,
-                            match_type=KeywordMatchType.EXACT,
-                            bid_amount=Money(
-                                amount=str(plan.default_bid),
-                                currency=plan.currency,
-                            ),
-                        )
-                    ])
+                    client.campaigns(new_campaign.id).ad_groups(new_ag.id).keywords.create_bulk(
+                        [
+                            KeywordCreate(
+                                text=keyword,
+                                match_type=KeywordMatchType.EXACT,
+                                bid_amount=Money(
+                                    amount=str(plan.default_bid),
+                                    currency=plan.currency,
+                                ),
+                            )
+                        ]
+                    )
                     created_keywords += 1
 
                     print_success(f"  {ag_name} → '{keyword}'")

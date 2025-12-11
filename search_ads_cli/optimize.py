@@ -2,30 +2,15 @@
 
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Annotated, Callable, TypeVar
+from typing import Annotated, Any, TypeVar
 
 import typer
-from rich.table import Table
-from rich.tree import Tree
-
-from search_ads_cli.utils import (
-    console,
-    enum_value,
-    format_money,
-    get_client,
-    handle_api_error,
-    print_error,
-    print_info,
-    print_result_panel,
-    print_success,
-    print_warning,
-    spinner,
-)
-from search_ads_api.exceptions import AppleSearchAdsError, NotFoundError
-from search_ads_api.models import (
+from asa_api_client.exceptions import AppleSearchAdsError, NotFoundError
+from asa_api_client.models import (
     AdGroupCreate,
     AdGroupUpdate,
     CampaignCreate,
@@ -37,6 +22,20 @@ from search_ads_api.models import (
     Money,
     NegativeKeywordCreate,
     Selector,
+)
+from rich.table import Table
+
+from search_ads_cli.utils import (
+    console,
+    enum_value,
+    get_client,
+    handle_api_error,
+    print_error,
+    print_info,
+    print_result_panel,
+    print_success,
+    print_warning,
+    spinner,
 )
 
 app = typer.Typer(help="Optimization commands for campaigns")
@@ -151,11 +150,7 @@ def check_bid_discrepancies(
         with client:
             # Get all enabled campaigns
             with spinner("Scanning enabled campaigns..."):
-                campaigns = list(
-                    client.campaigns.find(
-                        Selector().where("status", "==", "ENABLED")
-                    )
-                )
+                campaigns = list(client.campaigns.find(Selector().where("status", "==", "ENABLED")))
 
             print_info(f"Found {len(campaigns)} enabled campaigns")
             console.print()
@@ -165,9 +160,7 @@ def check_bid_discrepancies(
                 with spinner(f"Scanning {campaign.name}..."):
                     try:
                         ad_groups = list(
-                            client.campaigns(campaign.id).ad_groups.find(
-                                Selector().where("status", "==", "ENABLED")
-                            )
+                            client.campaigns(campaign.id).ad_groups.find(Selector().where("status", "==", "ENABLED"))
                         )
                     except AppleSearchAdsError:
                         # Skip campaigns we can't access
@@ -176,11 +169,7 @@ def check_bid_discrepancies(
                     for ag in ad_groups:
                         # Get keywords for this ad group
                         try:
-                            keywords = list(
-                                client.campaigns(campaign.id)
-                                .ad_groups(ag.id)
-                                .keywords.list()
-                            )
+                            keywords = list(client.campaigns(campaign.id).ad_groups(ag.id).keywords.list())
                         except AppleSearchAdsError:
                             continue
 
@@ -188,17 +177,13 @@ def check_bid_discrepancies(
                             continue
 
                         # Calculate keyword bid statistics
-                        keyword_bids = [
-                            Decimal(kw.bid_amount.amount)
-                            for kw in keywords
-                            if kw.bid_amount
-                        ]
+                        keyword_bids = [Decimal(kw.bid_amount.amount) for kw in keywords if kw.bid_amount]
 
                         if not keyword_bids:
                             continue
 
                         ad_group_bid = Decimal(ag.default_bid_amount.amount)
-                        keyword_avg = sum(keyword_bids) / len(keyword_bids)
+                        keyword_avg = Decimal(sum(keyword_bids) / len(keyword_bids))
                         keyword_min = min(keyword_bids)
                         keyword_max = max(keyword_bids)
                         currency = ag.default_bid_amount.currency
@@ -206,7 +191,7 @@ def check_bid_discrepancies(
                         # Check if there's a material discrepancy
                         # (keywords are higher than ad group bid)
                         if ad_group_bid > 0:
-                            diff_pct = (keyword_avg - ad_group_bid) / ad_group_bid * 100
+                            diff_pct = float((keyword_avg - ad_group_bid) / ad_group_bid * 100)
                             if diff_pct >= threshold:
                                 discrepancies.append(
                                     BidDiscrepancy(
@@ -224,9 +209,7 @@ def check_bid_discrepancies(
                                 )
 
             if not discrepancies:
-                print_success(
-                    f"No bid discrepancies found above {threshold}% threshold"
-                )
+                print_success(f"No bid discrepancies found above {threshold}% threshold")
                 return
 
             # Sort by difference percentage descending
@@ -273,18 +256,12 @@ def check_bid_discrepancies(
                 console.print(f"[bold]Campaign:[/bold] {d.campaign_name}")
                 console.print(f"[bold]Ad Group:[/bold] {d.ad_group_name}")
                 console.print()
-                console.print(
-                    f"  Current ad group bid:  [dim]{_format_bid(d.ad_group_bid, d.currency)}[/dim]"
-                )
-                console.print(
-                    f"  Keyword average bid:   [yellow]{_format_bid(d.keyword_avg_bid, d.currency)}[/yellow]"
-                )
-                console.print(
-                    f"  Keyword range:         {_format_bid(d.keyword_min_bid, d.currency)} - {_format_bid(d.keyword_max_bid, d.currency)}"
-                )
-                console.print(
-                    f"  Difference:            [red]+{d.difference_pct:.0f}%[/red]"
-                )
+                console.print(f"  Current ad group bid:  [dim]{_format_bid(d.ad_group_bid, d.currency)}[/dim]")
+                console.print(f"  Keyword average bid:   [yellow]{_format_bid(d.keyword_avg_bid, d.currency)}[/yellow]")
+                min_bid = _format_bid(d.keyword_min_bid, d.currency)
+                max_bid = _format_bid(d.keyword_max_bid, d.currency)
+                console.print(f"  Keyword range:         {min_bid} - {max_bid}")
+                console.print(f"  Difference:            [red]+{d.difference_pct:.0f}%[/red]")
                 console.print()
 
                 suggested_bid = round(d.keyword_avg_bid, 2)
@@ -295,9 +272,7 @@ def check_bid_discrepancies(
                     action = "apply"
                 else:
                     # Interactive prompt
-                    console.print(
-                        f"[bold]Suggested new bid:[/bold] {_format_bid(suggested_bid, d.currency)}"
-                    )
+                    console.print(f"[bold]Suggested new bid:[/bold] {_format_bid(suggested_bid, d.currency)}")
                     console.print()
 
                     action = typer.prompt(
@@ -455,10 +430,10 @@ class CampaignNameParts:
 
 
 def _select_campaigns_interactive(
-    campaigns: list,
+    campaigns: list[Any],
     campaign_type_filter: str | None = None,
     match_type_filter: str | None = None,
-) -> list:
+) -> list[Any]:
     """Interactive campaign selection with checkboxes.
 
     Args:
@@ -470,7 +445,7 @@ def _select_campaigns_interactive(
         List of selected Campaign objects
     """
     # Parse and filter campaigns
-    parsed_campaigns: list[tuple] = []  # (campaign, parsed_name)
+    parsed_campaigns: list[tuple[Any, CampaignNameParts]] = []
 
     for c in campaigns:
         parsed = CampaignNameParts.parse(c.name)
@@ -486,7 +461,7 @@ def _select_campaigns_interactive(
         return []
 
     # Group by app name for easier selection
-    apps: dict[str, list[tuple]] = defaultdict(list)
+    apps: dict[str, list[tuple[Any, CampaignNameParts]]] = defaultdict(list)
     for c, parsed in parsed_campaigns:
         apps[parsed.app_name].append((c, parsed))
 
@@ -504,18 +479,23 @@ def _select_campaigns_interactive(
     table.add_column("Status")
     table.add_column("ID", style="dim")
 
-    campaign_list: list[tuple] = []
+    campaign_list: list[tuple[Any, CampaignNameParts]] = []
     idx = 1
     sorted_apps = sorted(apps.keys())
     for app_idx, app_name in enumerate(sorted_apps):
         app_campaigns = sorted(apps[app_name], key=lambda x: (x[1].campaign_type, x[1].country))
         last_type = None
-        for camp_idx, (c, parsed) in enumerate(app_campaigns):
+        for _camp_idx, (c, parsed) in enumerate(app_campaigns):
             # Add a dim divider row between campaign types (within same app)
             if last_type is not None and parsed.campaign_type != last_type:
                 table.add_row(
-                    "[dim]·[/dim]", "[dim]·[/dim]", "[dim]·[/dim]", "[dim]·[/dim]",
-                    "[dim]·[/dim]", "[dim]·[/dim]", "[dim]·[/dim]",
+                    "[dim]·[/dim]",
+                    "[dim]·[/dim]",
+                    "[dim]·[/dim]",
+                    "[dim]·[/dim]",
+                    "[dim]·[/dim]",
+                    "[dim]·[/dim]",
+                    "[dim]·[/dim]",
                     style="dim",
                 )
 
@@ -563,9 +543,7 @@ def _select_campaigns_interactive(
             except ValueError:
                 continue
 
-    return [
-        c for i, (c, _) in enumerate(campaign_list, 1) if i in selected_indices
-    ]
+    return [c for i, (c, _) in enumerate(campaign_list, 1) if i in selected_indices]
 
 
 @app.command("expand")
@@ -728,9 +706,7 @@ def expand_campaign(
 
                                     # Get bid from report metadata or use a default
                                     if row.metadata.bid_amount:
-                                        keyword_bids[kw_text].append(
-                                            Decimal(row.metadata.bid_amount.amount)
-                                        )
+                                        keyword_bids[kw_text].append(Decimal(row.metadata.bid_amount.amount))
 
                     except AppleSearchAdsError as e:
                         print_warning(f"Could not get report for {campaign.name}: {e.message}")
@@ -750,7 +726,7 @@ def expand_campaign(
             # Step 3: Calculate average bids
             keyword_plans: list[KeywordPlan] = []
             for text, bids in keyword_bids.items():
-                avg_bid = sum(bids) / len(bids)
+                avg_bid = Decimal(sum(bids) / len(bids))
                 keyword_plans.append(
                     KeywordPlan(
                         text=text,
@@ -784,11 +760,12 @@ def expand_campaign(
                 plan_budget = Decimal(str(daily_budget))
             else:
                 source_budgets = [
-                    Decimal(c.daily_budget_amount.amount)
-                    for c in source_campaign_data
-                    if c.daily_budget_amount
+                    Decimal(c.daily_budget_amount.amount) for c in source_campaign_data if c.daily_budget_amount
                 ]
-                plan_budget = sum(source_budgets) / len(source_budgets) if source_budgets else Decimal("100")
+                if source_budgets:
+                    plan_budget = Decimal(sum(source_budgets) / len(source_budgets))
+                else:
+                    plan_budget = Decimal("100")
 
             # Create ad group plans (SKAG structure)
             ad_group_plans: list[AdGroupPlan] = []
@@ -933,16 +910,18 @@ def expand_campaign(
                 print_success(f"[{i}/{len(campaign_plan.ad_groups)}] Created ad group: {new_ag.name} (ID: {new_ag.id})")
 
                 # Create keyword (must use bulk endpoint)
-                client.campaigns(new_campaign.id).ad_groups(new_ag.id).keywords.create_bulk([
-                    KeywordCreate(
-                        text=ag_plan.keyword.text,
-                        match_type=KeywordMatchType.EXACT,
-                        bid_amount=Money(
-                            amount=str(ag_plan.keyword.bid),
-                            currency=ag_plan.keyword.currency,
-                        ),
-                    )
-                ])
+                client.campaigns(new_campaign.id).ad_groups(new_ag.id).keywords.create_bulk(
+                    [
+                        KeywordCreate(
+                            text=ag_plan.keyword.text,
+                            match_type=KeywordMatchType.EXACT,
+                            bid_amount=Money(
+                                amount=str(ag_plan.keyword.bid),
+                                currency=ag_plan.keyword.currency,
+                            ),
+                        )
+                    ]
+                )
                 created_keywords += 1
 
                 # Create negative keywords (bulk for efficiency)
@@ -955,7 +934,8 @@ def expand_campaign(
                             )
                             for neg_text in ag_plan.negatives
                         ]
-                        result = client.campaigns(new_campaign.id).ad_groups(new_ag.id).negative_keywords.create_bulk(neg_keywords)
+                        neg_resource = client.campaigns(new_campaign.id).ad_groups(new_ag.id).negative_keywords
+                        result = neg_resource.create_bulk(neg_keywords)
                         created_negatives += len(result.data)
                     except AppleSearchAdsError:
                         # Skip if negative keyword creation fails

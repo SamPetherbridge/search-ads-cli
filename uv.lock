@@ -24,6 +24,21 @@ wheels = [
 ]
 
 [[package]]
+name = "asa-api-client"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pyjwt", extra = ["crypto"] },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a8/77/31549a1eff36796851b86d139877e1926f80260808388006b8f858d4bc16/asa_api_client-0.1.1.tar.gz", hash = "sha256:501c6f817b81abdd0f3cd9f19991a6ba53324be04aad7140299f2d027666354b", size = 97668, upload-time = "2025-12-11T00:16:04.768Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/72/8e/3e7c8460d4f8287850fcf9b67b43e476712e766950eef989283288446f99/asa_api_client-0.1.1-py3-none-any.whl", hash = "sha256:825bf68a1ba05080c0a5835dcf140f9a1ac496aa70e4020ae0e2837a8cee2709", size = 41490, upload-time = "2025-12-11T00:16:03.28Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2025.11.12"
 source = { registry = "https://pypi.org/simple" }
@@ -600,44 +615,12 @@ wheels = [
 ]
 
 [[package]]
-name = "search-ads-api"
-version = "0.1.0"
-source = { editable = "../search-ads-api" }
-dependencies = [
-    { name = "httpx" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "pyjwt", extra = ["crypto"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.27.0" },
-    { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6.0" },
-    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5.0" },
-    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.27.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
-    { name = "pandas", marker = "extra == 'dev'", specifier = ">=2.2.0" },
-    { name = "pandas", marker = "extra == 'pandas'", specifier = ">=2.2.0" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0.0" },
-    { name = "pydantic", specifier = ">=2.10.0" },
-    { name = "pydantic-settings", specifier = ">=2.6.0" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
-    { name = "pytest-httpx", marker = "extra == 'dev'", specifier = ">=0.34.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
-]
-provides-extras = ["pandas", "dev", "docs"]
-
-[[package]]
 name = "search-ads-cli"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "asa-api-client" },
     { name = "rich" },
-    { name = "search-ads-api" },
     { name = "typer" },
 ]
 
@@ -652,13 +635,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "asa-api-client", specifier = ">=0.1.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "rich", specifier = ">=13.9.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
-    { name = "search-ads-api", editable = "../search-ads-api" },
     { name = "typer", specifier = ">=0.13.0" },
 ]
 provides-extras = ["dev"]

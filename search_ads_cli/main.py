@@ -5,7 +5,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from search_ads_cli import auth, brand, campaigns, ad_groups, keywords, optimize, reports
+from search_ads_cli import ad_groups, auth, brand, campaigns, keywords, optimize, reports
 
 app = typer.Typer(
     name="asa",
@@ -28,8 +28,9 @@ app.add_typer(optimize.app, name="optimize", help="Optimization tools")
 def version_callback(value: bool) -> None:
     """Show version and exit."""
     if value:
+        from asa_api_client import __version__ as api_version
+
         from search_ads_cli import __version__ as cli_version
-        from search_ads_api import __version__ as api_version
 
         console.print(f"search-ads-cli {cli_version} (search-ads-api {api_version})")
         raise typer.Exit()

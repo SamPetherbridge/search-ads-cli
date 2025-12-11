@@ -1,28 +1,26 @@
 """Campaign CLI commands."""
 
 from datetime import date, timedelta
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
+from asa_api_client.exceptions import AppleSearchAdsError
+from asa_api_client.models import CampaignStatus, CampaignUpdate, Money, Selector
 
 from search_ads_cli.utils import (
     OutputFormat,
     confirm_action,
-    console,
     enum_value,
     format_money,
     get_client,
     handle_api_error,
     output_data,
-    print_info,
     print_json,
     print_result_panel,
     print_success,
     print_warning,
     spinner,
 )
-from search_ads_api.exceptions import AppleSearchAdsError
-from search_ads_api.models import CampaignStatus, CampaignUpdate, Money, Selector
 
 app = typer.Typer(help="Manage campaigns")
 
@@ -71,7 +69,7 @@ def _colorize_serving(serving: str) -> str:
     return serving
 
 
-def campaign_to_dict(campaign: object, spend: str | None = None, colorize: bool = False) -> dict:
+def campaign_to_dict(campaign: object, spend: str | None = None, colorize: bool = False) -> dict[str, Any]:
     """Convert campaign to display dictionary."""
     status = enum_value(campaign.status)  # type: ignore
     serving_status = enum_value(campaign.serving_status)  # type: ignore
@@ -312,22 +310,20 @@ def set_budget(
         with client:
             update = CampaignUpdate()
             if daily_budget is not None:
-                update.daily_budget_amount = Money(
-                    amount=str(daily_budget), currency=currency
-                )
+                update.daily_budget_amount = Money(amount=str(daily_budget), currency=currency)
             if total_budget is not None:
-                update.budget_amount = Money(
-                    amount=str(total_budget), currency=currency
-                )
+                update.budget_amount = Money(amount=str(total_budget), currency=currency)
 
             with spinner("Updating budget..."):
                 campaign = client.campaigns.update(campaign_id, data=update)
 
             result_data = {"Campaign": campaign.name}
             if campaign.daily_budget_amount:
-                result_data["Daily Budget"] = f"{campaign.daily_budget_amount.amount} {campaign.daily_budget_amount.currency}"
+                amt = campaign.daily_budget_amount
+                result_data["Daily Budget"] = f"{amt.amount} {amt.currency}"
             if campaign.budget_amount:
-                result_data["Total Budget"] = f"{campaign.budget_amount.amount} {campaign.budget_amount.currency}"
+                amt = campaign.budget_amount
+                result_data["Total Budget"] = f"{amt.amount} {amt.currency}"
 
             print_result_panel("Budget Updated", result_data)
 
@@ -361,9 +357,7 @@ def delete_campaign(
                 campaign = client.campaigns.get(campaign_id)
 
             if not force:
-                if not confirm_action(
-                    f"Are you sure you want to delete campaign '{campaign.name}'?"
-                ):
+                if not confirm_action(f"Are you sure you want to delete campaign '{campaign.name}'?"):
                     print_warning("Cancelled")
                     raise typer.Exit(0)
 

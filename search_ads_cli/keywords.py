@@ -1,8 +1,18 @@
 """Keyword CLI commands."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
+from asa_api_client.exceptions import AppleSearchAdsError
+from asa_api_client.models import (
+    KeywordCreate,
+    KeywordMatchType,
+    KeywordStatus,
+    KeywordUpdate,
+    Money,
+    NegativeKeywordCreate,
+    Selector,
+)
 
 from search_ads_cli.utils import (
     OutputFormat,
@@ -17,16 +27,6 @@ from search_ads_cli.utils import (
     print_success,
     print_warning,
     spinner,
-)
-from search_ads_api.exceptions import AppleSearchAdsError
-from search_ads_api.models import (
-    KeywordCreate,
-    KeywordMatchType,
-    KeywordStatus,
-    KeywordUpdate,
-    Money,
-    NegativeKeywordCreate,
-    Selector,
 )
 
 app = typer.Typer(help="Manage keywords")
@@ -45,7 +45,7 @@ KEYWORD_COLUMN_LABELS = {
 }
 
 
-def keyword_to_dict(keyword: object) -> dict:
+def keyword_to_dict(keyword: object) -> dict[str, Any]:
     """Convert keyword to display dictionary."""
     return {
         "id": keyword.id,  # type: ignore
@@ -101,17 +101,9 @@ def list_keywords(
                     selector = selector.where("matchType", "==", match_type.value)
 
                 if selector.conditions:
-                    keywords = (
-                        client.campaigns(campaign_id)
-                        .ad_groups(ad_group_id)
-                        .keywords.find(selector)
-                    )
+                    keywords = client.campaigns(campaign_id).ad_groups(ad_group_id).keywords.find(selector)
                 else:
-                    keywords = (
-                        client.campaigns(campaign_id)
-                        .ad_groups(ad_group_id)
-                        .keywords.list(limit=limit)
-                    )
+                    keywords = client.campaigns(campaign_id).ad_groups(ad_group_id).keywords.list(limit=limit)
 
             if not keywords.data:
                 print_warning("No keywords found")
@@ -151,9 +143,7 @@ def get_keyword(
     try:
         with client:
             with spinner("Fetching keyword..."):
-                keyword = (
-                    client.campaigns(campaign_id).ad_groups(ad_group_id).keywords.get(keyword_id)
-                )
+                keyword = client.campaigns(campaign_id).ad_groups(ad_group_id).keywords.get(keyword_id)
 
             if format == OutputFormat.JSON:
                 print_json(keyword, title=f"Keyword {keyword_id}")
@@ -203,11 +193,7 @@ def add_keyword(
                 create_data.bid_amount = Money(amount=str(bid), currency=currency)
 
             with spinner("Adding keyword..."):
-                keyword = (
-                    client.campaigns(campaign_id)
-                    .ad_groups(ad_group_id)
-                    .keywords.create(create_data)
-                )
+                keyword = client.campaigns(campaign_id).ad_groups(ad_group_id).keywords.create(create_data)
 
             print_result_panel(
                 "Keyword Added",
@@ -344,9 +330,7 @@ def delete_keyword(
     try:
         with client:
             with spinner("Fetching keyword..."):
-                keyword = (
-                    client.campaigns(campaign_id).ad_groups(ad_group_id).keywords.get(keyword_id)
-                )
+                keyword = client.campaigns(campaign_id).ad_groups(ad_group_id).keywords.get(keyword_id)
 
             if not force:
                 if not confirm_action(f"Are you sure you want to delete keyword '{keyword.text}'?"):
@@ -404,11 +388,7 @@ def list_negatives(
 
             with spinner(f"Fetching {level.lower()} negative keywords..."):
                 if ad_group_id:
-                    negatives = (
-                        client.campaigns(campaign_id)
-                        .ad_groups(ad_group_id)
-                        .negative_keywords.list(limit=limit)
-                    )
+                    negatives = client.campaigns(campaign_id).ad_groups(ad_group_id).negative_keywords.list(limit=limit)
                 else:
                     negatives = client.campaigns(campaign_id).negative_keywords.list(limit=limit)
 
@@ -472,9 +452,7 @@ def add_negative(
             with spinner(f"Adding negative keyword at {level} level..."):
                 if ad_group_id:
                     negative = (
-                        client.campaigns(campaign_id)
-                        .ad_groups(ad_group_id)
-                        .negative_keywords.create(create_data)
+                        client.campaigns(campaign_id).ad_groups(ad_group_id).negative_keywords.create(create_data)
                     )
                 else:
                     negative = client.campaigns(campaign_id).negative_keywords.create(create_data)
@@ -525,9 +503,7 @@ def delete_negative(
 
             with spinner(f"Deleting {level} negative keyword..."):
                 if ad_group_id:
-                    client.campaigns(campaign_id).ad_groups(ad_group_id).negative_keywords.delete(
-                        keyword_id
-                    )
+                    client.campaigns(campaign_id).ad_groups(ad_group_id).negative_keywords.delete(keyword_id)
                 else:
                     client.campaigns(campaign_id).negative_keywords.delete(keyword_id)
 

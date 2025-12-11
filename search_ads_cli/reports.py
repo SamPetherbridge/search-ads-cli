@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
+from asa_api_client.exceptions import AppleSearchAdsError
+from asa_api_client.models import GranularityType
 from rich.panel import Panel
 from rich.table import Table
 
@@ -21,8 +23,6 @@ from search_ads_cli.utils import (
     print_warning,
     spinner,
 )
-from search_ads_api.exceptions import AppleSearchAdsError
-from search_ads_api.models import GranularityType
 
 app = typer.Typer(help="Generate performance reports")
 
@@ -135,7 +135,8 @@ def print_grand_totals(report: object) -> None:
     if total.conversion_rate is not None:
         lines.append(f"[label]Conv Rate:[/label] [value]{format_percent(total.conversion_rate)}[/value]")
     if total.local_spend:
-        lines.append(f"[label]Total Spend:[/label] [value]{total.local_spend.amount} {total.local_spend.currency}[/value]")
+        spend = total.local_spend
+        lines.append(f"[label]Total Spend:[/label] [value]{spend.amount} {spend.currency}[/value]")
 
     panel = Panel(
         "\n".join(lines),
