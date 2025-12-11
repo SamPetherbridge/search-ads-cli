@@ -9,7 +9,7 @@ from asa_api_client.exceptions import AppleSearchAdsError, ConfigurationError
 from pydantic import ValidationError
 from rich.table import Table
 
-from search_ads_cli.utils import (
+from asa_api_cli.utils import (
     console,
     print_error,
     print_info,

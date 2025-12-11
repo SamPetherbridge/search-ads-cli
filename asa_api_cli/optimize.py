@@ -25,7 +25,7 @@ from asa_api_client.models import (
 )
 from rich.table import Table
 
-from search_ads_cli.utils import (
+from asa_api_cli.utils import (
     console,
     enum_value,
     get_client,

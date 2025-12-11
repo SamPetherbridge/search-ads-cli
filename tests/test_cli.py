@@ -2,7 +2,7 @@
 
 from typer.testing import CliRunner
 
-from search_ads_cli import app
+from asa_api_cli import app
 
 runner = CliRunner()
 
@@ -11,7 +11,7 @@ def test_version() -> None:
     """Test --version flag."""
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert "search-ads-cli" in result.stdout
+    assert "asa-api-cli" in result.stdout
 
 
 def test_help() -> None:

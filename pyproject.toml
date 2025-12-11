@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "search-ads-cli"
+name = "asa-api-cli"
 version = "0.1.0"
 description = "Command-line interface for Apple Search Ads campaign management"
 readme = "README.md"
@@ -34,7 +34,7 @@ dependencies = [
 ]
 
 [project.scripts]
-asa = "search_ads_cli:app"
+asa = "asa_api_cli:app"
 
 [project.optional-dependencies]
 dev = [
@@ -46,12 +46,12 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/SamPetherbridge/search-ads-cli"
-Repository = "https://github.com/SamPetherbridge/search-ads-cli"
-Issues = "https://github.com/SamPetherbridge/search-ads-cli/issues"
+Homepage = "https://github.com/SamPetherbridge/asa-api-cli"
+Repository = "https://github.com/SamPetherbridge/asa-api-cli"
+Issues = "https://github.com/SamPetherbridge/asa-api-cli/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["search_ads_cli"]
+packages = ["asa_api_cli"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -72,5 +72,5 @@ select = ["E", "W", "F", "I", "B", "C4", "ARG"]
 ignore = ["B904"]
 
 [tool.coverage.run]
-source = ["search_ads_cli"]
+source = ["asa_api_cli"]
 branch = true

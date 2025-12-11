@@ -14,7 +14,7 @@ from asa_api_client.models import (
     Selector,
 )
 
-from search_ads_cli.utils import (
+from asa_api_cli.utils import (
     OutputFormat,
     confirm_action,
     enum_value,

@@ -1,9 +1,9 @@
-# Search Ads CLI
+# ASA API CLI
 
-[![PyPI version](https://img.shields.io/pypi/v/search-ads-cli.svg)](https://pypi.org/project/search-ads-cli/)
-[![Python](https://img.shields.io/pypi/pyversions/search-ads-cli.svg)](https://pypi.org/project/search-ads-cli/)
-[![License](https://img.shields.io/github/license/SamPetherbridge/search-ads-cli.svg)](https://github.com/SamPetherbridge/search-ads-cli/blob/main/LICENSE)
-[![CI](https://github.com/SamPetherbridge/search-ads-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/SamPetherbridge/search-ads-cli/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/asa-api-cli.svg)](https://pypi.org/project/asa-api-cli/)
+[![Python](https://img.shields.io/pypi/pyversions/asa-api-cli.svg)](https://pypi.org/project/asa-api-cli/)
+[![License](https://img.shields.io/github/license/SamPetherbridge/asa-api-cli.svg)](https://github.com/SamPetherbridge/asa-api-cli/blob/main/LICENSE)
+[![CI](https://github.com/SamPetherbridge/asa-api-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/SamPetherbridge/asa-api-cli/actions/workflows/ci.yml)
 
 A command-line interface for managing Apple Search Ads campaigns.
 
@@ -14,19 +14,19 @@ Built on top of [asa-api-client](https://github.com/SamPetherbridge/asa-api-clie
 Using [uv](https://docs.astral.sh/uv/) (recommended):
 
 ```bash
-uv tool install search-ads-cli
+uv tool install asa-api-cli
 ```
 
 Using pip:
 
 ```bash
-pip install search-ads-cli
+pip install asa-api-cli
 ```
 
 Using pipx:
 
 ```bash
-pipx install search-ads-cli
+pipx install asa-api-cli
 ```
 
 ## Setup

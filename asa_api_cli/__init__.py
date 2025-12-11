@@ -8,7 +8,7 @@ Usage:
     asa reports campaigns --start 2024-01-01 --end 2024-01-31
 """
 
-from search_ads_cli.main import app
+from asa_api_cli.main import app
 
 __all__ = ["app"]
 

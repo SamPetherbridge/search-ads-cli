@@ -20,8 +20,8 @@ from asa_api_client.models import (
 )
 from rich.table import Table
 
-from search_ads_cli.optimize import CampaignNameParts, wait_for_resource
-from search_ads_cli.utils import (
+from asa_api_cli.optimize import CampaignNameParts, wait_for_resource
+from asa_api_cli.utils import (
     console,
     get_client,
     handle_api_error,
