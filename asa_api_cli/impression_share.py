@@ -637,7 +637,7 @@ def correlate_impression_share(
     ] = 7,
     country: Annotated[
         str | None,
-        typer.Option("--country", "-c", help="Filter by country code (required for correlation)"),
+        typer.Option("--country", "-c", help="Filter by country code (optional, defaults to all)"),
     ] = None,
     min_share: Annotated[
         float | None,
@@ -673,16 +673,12 @@ def correlate_impression_share(
     campaign-level attribution for impression share data.
 
     Examples:
-        asa impression-share correlate --country US
-        asa impression-share correlate --country AU --min-share 30
-        asa impression-share correlate --country US --unmatched  # New keyword opportunities
-        asa impression-share correlate --country US --matched --min-share 40  # Bid increase candidates
+        asa impression-share correlate                           # All countries
+        asa impression-share correlate --country US              # Single country
+        asa impression-share correlate --min-share 30            # Low share only
+        asa impression-share correlate --unmatched               # New keyword opportunities
+        asa impression-share correlate --matched --min-share 40  # Bid increase candidates
     """
-    if not country:
-        print_error("Error", "Country is required for correlation. Use --country/-c")
-        raise typer.Exit(1)
-
-    country = country.upper()
     client = get_client()
 
     if days > 30:
@@ -692,6 +688,8 @@ def correlate_impression_share(
     end_date = date.today() - timedelta(days=1)
     start_date = end_date - timedelta(days=days - 1)
 
+    country_codes = [country.upper()] if country else None
+
     try:
         with client:
             # Step 1: Get impression share data
@@ -700,39 +698,47 @@ def correlate_impression_share(
                     start_date=start_date,
                     end_date=end_date,
                     granularity=GranularityType.DAILY,
-                    country_codes=[country],
+                    country_codes=country_codes,
                     poll_interval=3.0,
                     timeout=120.0,
                 )
 
             if not report.row:
-                print_warning(f"No impression share data available for {country}")
+                print_warning("No impression share data available")
                 return
 
             print_success(f"Retrieved {len(report.row)} impression share records")
 
-            # Step 2: Build keyword index for this country
-            with spinner(f"Building keyword index for {country}..."):
-                keyword_index = _build_keyword_index(client, country)
-
-            total_kw = sum(len(v) for v in keyword_index.values())
-            print_info(f"Indexed {total_kw} keywords from {len(keyword_index)} unique terms")
-
-            # Step 3: Correlate data
+            # Parse and aggregate data
             share_data = _parse_report_data(report)
             aggregated = _aggregate_by_search_term(share_data)
 
+            # Find all unique countries in the data
+            countries_in_data = {item.country.upper() for item in aggregated.values() if item.country}
+            print_info(f"Found data for {len(countries_in_data)} countries: {', '.join(sorted(countries_in_data))}")
+
+            # Step 2: Build keyword index for each country
+            keyword_indices: dict[str, dict[str, list[KeywordInfo]]] = {}
+            total_keywords = 0
+
+            for ctry in countries_in_data:
+                with spinner(f"Building keyword index for {ctry}..."):
+                    keyword_indices[ctry] = _build_keyword_index(client, ctry)
+                    kw_count = sum(len(v) for v in keyword_indices[ctry].values())
+                    total_keywords += kw_count
+
+            print_info(f"Indexed {total_keywords} keywords across {len(countries_in_data)} countries")
+
+            # Step 3: Correlate data
             correlated: list[CorrelatedSearchTerm] = []
             for item in aggregated.values():
-                if item.country.upper() != country:
-                    continue
-
+                ctry = item.country.upper()
+                keyword_index = keyword_indices.get(ctry, {})
                 search_term_lower = item.search_term.lower()
                 matched_keywords = keyword_index.get(search_term_lower, [])
 
                 if matched_keywords:
                     # Use first match (could be multiple campaigns with same keyword)
-                    # TODO: Could show all matches or pick based on criteria
                     match = matched_keywords[0]
                     correlated.append(
                         CorrelatedSearchTerm(
@@ -782,7 +788,7 @@ def correlate_impression_share(
                 return
 
             # Sort by share (lowest first)
-            correlated.sort(key=lambda x: x.avg_share)
+            correlated.sort(key=lambda x: (x.avg_share, x.country, x.search_term))
 
             # Stats
             matched_count = sum(1 for c in correlated if c.is_matched)
@@ -835,8 +841,15 @@ def correlate_impression_share(
             # Display table
             display_limit = len(correlated) if limit == 0 else limit
 
-            table = Table(title=f"Impression Share Correlation - {country}")
+            title = "Impression Share Correlation"
+            if country:
+                title += f" - {country.upper()}"
+            else:
+                title += f" - All Countries ({len(countries_in_data)})"
+
+            table = Table(title=title)
             table.add_column("Search Term", style="cyan", max_width=30)
+            table.add_column("Ctry", style="dim", width=4)
             table.add_column("Share", justify="right", width=8)
             table.add_column("Campaign", style="magenta", max_width=25)
             table.add_column("Keyword", style="dim", max_width=20)
@@ -857,6 +870,7 @@ def correlate_impression_share(
 
                 table.add_row(
                     row.search_term[:30],
+                    row.country,
                     f"[{share_style}]{row.share_range}[/{share_style}]",
                     campaign_display,
                     keyword_display,
