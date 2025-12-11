@@ -1,16 +1,11 @@
-"""Impression Share CLI commands for bid optimization."""
+"""Impression Share CLI commands for search term analysis."""
 
 from dataclasses import dataclass
 from datetime import date, timedelta
-from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
-from asa_api_client.models.reports import (
-    GranularityType,
-    ImpressionShareReport,
-)
-from rich.prompt import Prompt
+from asa_api_client.models.reports import GranularityType, ImpressionShareReport
 from rich.table import Table
 
 from asa_api_cli.utils import (
@@ -24,25 +19,21 @@ from asa_api_cli.utils import (
     spinner,
 )
 
-app = typer.Typer(help="Impression share analysis and bid optimization")
+app = typer.Typer(help="Impression share analysis for search terms")
 
 
 @dataclass
-class KeywordShareData:
-    """Impression share data for a keyword with bid info."""
+class SearchTermShareData:
+    """Impression share data for a search term."""
 
-    campaign_id: int
-    campaign_name: str
-    ad_group_id: int
-    ad_group_name: str
-    keyword_id: int
-    keyword: str
+    date: str
+    app_name: str
+    adam_id: str
     country: str
-    current_bid: Decimal
-    currency: str
+    search_term: str
     low_share: float | None
     high_share: float | None
-    rank: int | None
+    rank: str | None
     search_popularity: int | None
 
     @property
@@ -55,74 +46,48 @@ class KeywordShareData:
         return f"{low}-{high}%"
 
     @property
-    def rank_str(self) -> str:
-        """Format rank for display."""
-        return str(self.rank) if self.rank else "N/A"
+    def rank_display(self) -> str:
+        """Format rank for display - convert ONE, TWO etc to 1, 2."""
+        if not self.rank:
+            return "N/A"
+        rank_map = {
+            "ONE": "1",
+            "TWO": "2",
+            "THREE": "3",
+            "FOUR": "4",
+            "GREATER_THAN_FOUR": ">4",
+        }
+        return rank_map.get(self.rank, self.rank)
 
     @property
-    def bid_str(self) -> str:
-        """Format bid for display."""
-        return f"{self.current_bid:.2f} {self.currency}"
+    def popularity_display(self) -> str:
+        """Format popularity for display."""
+        if self.search_popularity is None:
+            return "N/A"
+        return str(self.search_popularity)
 
     @property
-    def suggested_bid(self) -> Decimal:
-        """Suggest a bid based on impression share.
-
-        Logic:
-        - 0-10% share: Suggest 50% increase
-        - 10-30% share: Suggest 25% increase
-        - 30-50% share: Suggest 10% increase
-        - 50%+ share: Keep current bid
-        """
-        if self.high_share is None or self.high_share >= 0.5:
-            return self.current_bid
-
-        high_pct = self.high_share * 100
-        if high_pct <= 10:
-            return self.current_bid * Decimal("1.50")
-        elif high_pct <= 30:
-            return self.current_bid * Decimal("1.25")
-        elif high_pct <= 50:
-            return self.current_bid * Decimal("1.10")
-        return self.current_bid
-
-    @property
-    def suggested_bid_str(self) -> str:
-        """Format suggested bid for display."""
-        suggested = self.suggested_bid
-        if suggested == self.current_bid:
-            return "-"
-        return f"{suggested:.2f} {self.currency}"
+    def avg_share(self) -> float:
+        """Average of low and high share for sorting."""
+        if self.low_share is None and self.high_share is None:
+            return 0.0
+        low = self.low_share or 0.0
+        high = self.high_share or low
+        return (low + high) / 2
 
 
-def _parse_report_data(
-    report: ImpressionShareReport,
-    keywords_by_id: dict[int, dict[str, Any]],
-) -> list[KeywordShareData]:
+def _parse_report_data(report: ImpressionShareReport) -> list[SearchTermShareData]:
     """Parse impression share report into structured data."""
-    results: list[KeywordShareData] = []
+    results: list[SearchTermShareData] = []
 
     for row in report.row:
-        meta = row.metadata
-        if not meta.keyword_id or not meta.keyword:
-            continue
-
-        # Get keyword bid info
-        kw_info = keywords_by_id.get(meta.keyword_id, {})
-        bid_amount = kw_info.get("bid", Decimal("0"))
-        currency = kw_info.get("currency", "USD")
-
         results.append(
-            KeywordShareData(
-                campaign_id=meta.campaign_id or 0,
-                campaign_name=meta.campaign_name or "",
-                ad_group_id=meta.ad_group_id or 0,
-                ad_group_name=meta.ad_group_name or "",
-                keyword_id=meta.keyword_id,
-                keyword=meta.keyword,
-                country=meta.country_or_region or "",
-                current_bid=bid_amount,
-                currency=currency,
+            SearchTermShareData(
+                date=row.date or "",
+                app_name=row.app_name or "",
+                adam_id=row.adam_id or "",
+                country=row.country_or_region or "",
+                search_term=row.search_term or "",
                 low_share=row.low_impression_share,
                 high_share=row.high_impression_share,
                 rank=row.rank,
@@ -133,33 +98,53 @@ def _parse_report_data(
     return results
 
 
-def _display_share_table(data: list[KeywordShareData], show_suggestions: bool = True) -> None:
+def _aggregate_by_search_term(
+    data: list[SearchTermShareData],
+) -> dict[str, SearchTermShareData]:
+    """Aggregate data by search term, keeping latest entry."""
+    aggregated: dict[str, SearchTermShareData] = {}
+
+    for item in data:
+        key = f"{item.search_term}|{item.country}"
+        if key not in aggregated or item.date > aggregated[key].date:
+            aggregated[key] = item
+
+    return aggregated
+
+
+def _display_share_table(data: list[SearchTermShareData]) -> None:
     """Display impression share data in a rich table."""
-    table = Table(title="Impression Share Analysis", show_lines=True)
+    table = Table(title="Impression Share Analysis", show_lines=False)
 
-    table.add_column("Campaign", style="cyan", no_wrap=True)
-    table.add_column("Keyword", style="white")
-    table.add_column("Country", style="dim")
-    table.add_column("Share", justify="right", style="green")
-    table.add_column("Rank", justify="center")
-    table.add_column("Current Bid", justify="right")
-    if show_suggestions:
-        table.add_column("Suggested", justify="right", style="yellow")
+    table.add_column("Search Term", style="cyan", no_wrap=False, max_width=40)
+    table.add_column("Country", style="dim", width=4)
+    table.add_column("Share", justify="right", style="green", width=10)
+    table.add_column("Rank", justify="center", width=4)
+    table.add_column("Pop", justify="center", width=3)
+    table.add_column("Date", style="dim", width=10)
 
-    for row in data:
-        row_values = [
-            row.campaign_name[:30],
-            row.keyword,
+    for row in data[:50]:  # Limit to 50 rows
+        # Color share based on value
+        share_style = "green"
+        if row.high_share:
+            if row.high_share < 0.3:
+                share_style = "red"
+            elif row.high_share < 0.5:
+                share_style = "yellow"
+
+        table.add_row(
+            row.search_term[:40],
             row.country,
-            row.share_range,
-            row.rank_str,
-            row.bid_str,
-        ]
-        if show_suggestions:
-            row_values.append(row.suggested_bid_str)
-        table.add_row(*row_values)
+            f"[{share_style}]{row.share_range}[/{share_style}]",
+            row.rank_display,
+            row.popularity_display,
+            row.date,
+        )
 
     console.print(table)
+
+    if len(data) > 50:
+        print_info(f"Showing 50 of {len(data)} results. Use --output to export all.")
 
 
 @app.command("analyze")
@@ -170,31 +155,33 @@ def analyze_impression_share(
     ] = 7,
     country: Annotated[
         str | None,
-        typer.Option("--country", "-c", help="Filter by country code (e.g., US, GB)"),
+        typer.Option("--country", "-c", help="Filter by country code (e.g., US, AU)"),
     ] = None,
     min_share: Annotated[
         float | None,
-        typer.Option("--min-share", help="Only show keywords with share below this %"),
+        typer.Option(
+            "--min-share",
+            help="Only show search terms with share below this % (e.g., 30)",
+        ),
     ] = None,
-    campaign: Annotated[
+    search: Annotated[
         str | None,
-        typer.Option("--campaign", help="Filter by campaign name pattern"),
+        typer.Option("--search", "-s", help="Filter by search term (partial match)"),
     ] = None,
-    suggest: Annotated[
-        bool,
-        typer.Option("--suggest/--no-suggest", help="Show bid suggestions"),
-    ] = True,
+    output: Annotated[
+        str | None,
+        typer.Option("--output", "-o", help="Export to CSV file"),
+    ] = None,
 ) -> None:
-    """Analyze impression share for all keywords.
+    """Analyze impression share for your search terms.
 
-    Shows your impression share (percentage of available impressions
-    you're winning) for each keyword, along with current bids and
-    suggested bid increases for better exposure.
+    Shows what percentage of impressions you're capturing for search terms
+    where your ads appeared. Lower share indicates opportunity for bid increases.
 
     Examples:
         asa impression-share analyze --days 14
         asa impression-share analyze --country US --min-share 30
-        asa impression-share analyze --campaign "Brand*"
+        asa impression-share analyze --search "calculator" --output report.csv
     """
     client = get_client()
 
@@ -204,7 +191,7 @@ def analyze_impression_share(
         days = 30
 
     end_date = date.today() - timedelta(days=1)
-    start_date = end_date - timedelta(days=days - 1)  # -1 because range is inclusive
+    start_date = end_date - timedelta(days=days - 1)
 
     country_codes = [country.upper()] if country else None
 
@@ -227,240 +214,81 @@ def analyze_impression_share(
         print_warning("No impression share data available for the selected period")
         return
 
-    print_success(f"Retrieved {len(report.row)} keyword records")
+    print_success(f"Retrieved {len(report.row)} records")
 
-    # Get keyword bid information
-    keywords_by_id: dict[int, dict[str, Any]] = {}
+    # Parse data
+    data = _parse_report_data(report)
 
-    with spinner("Fetching keyword bid data..."):
-        try:
-            # Get all campaigns
-            campaigns_resp = client.campaigns.list(limit=1000)
-            for camp in campaigns_resp.data:
-                if campaign and campaign.replace("*", "") not in camp.name:
-                    continue
+    # Aggregate by search term (keep latest)
+    aggregated = _aggregate_by_search_term(data)
+    data = list(aggregated.values())
 
-                # Get ad groups for each campaign
-                ad_groups_resp = client.campaigns(camp.id).ad_groups.list(limit=1000)
-                for ag in ad_groups_resp.data:
-                    # Get keywords for each ad group
-                    kws_resp = client.campaigns(camp.id).ad_groups(ag.id).keywords.list(
-                        limit=1000
-                    )
-                    for kw in kws_resp.data:
-                        if kw.bid_amount:
-                            keywords_by_id[kw.id] = {
-                                "bid": Decimal(kw.bid_amount.amount),
-                                "currency": kw.bid_amount.currency,
-                            }
-        except Exception as e:
-            handle_api_error(e)
-            return
+    # Apply search filter
+    if search:
+        search_lower = search.lower()
+        data = [d for d in data if search_lower in d.search_term.lower()]
 
-    # Parse and filter data
-    data = _parse_report_data(report, keywords_by_id)
-
-    # Apply campaign filter
-    if campaign:
-        pattern = campaign.replace("*", "").lower()
-        data = [d for d in data if pattern in d.campaign_name.lower()]
-
-    # Apply min share filter
+    # Apply min share filter (show only terms below this share)
     if min_share is not None:
         threshold = min_share / 100.0
         data = [d for d in data if d.high_share is not None and d.high_share < threshold]
 
     if not data:
-        print_warning("No keywords match the specified filters")
+        print_warning("No search terms match the specified filters")
         return
 
-    # Sort by impression share (lowest first - most opportunity)
-    data.sort(key=lambda x: x.high_share or 0)
+    # Sort by share (lowest first - most opportunity)
+    data.sort(key=lambda x: x.avg_share)
 
-    _display_share_table(data, show_suggestions=suggest)
+    # Export to CSV if requested
+    if output:
+        try:
+            import csv
+
+            with open(output, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(
+                    [
+                        "search_term",
+                        "country",
+                        "low_share",
+                        "high_share",
+                        "rank",
+                        "popularity",
+                        "date",
+                        "app_name",
+                    ]
+                )
+                for row in data:
+                    writer.writerow(
+                        [
+                            row.search_term,
+                            row.country,
+                            row.low_share,
+                            row.high_share,
+                            row.rank,
+                            row.search_popularity,
+                            row.date,
+                            row.app_name,
+                        ]
+                    )
+            print_success(f"Exported {len(data)} rows to {output}")
+        except Exception as e:
+            print_error("Export failed", str(e))
+
+    _display_share_table(data)
 
     # Summary
     low_share_count = sum(1 for d in data if d.high_share and d.high_share < 0.3)
-    print_info(f"\nTotal keywords: {len(data)}")
-    print_info(f"Keywords with <30% share: {low_share_count}")
+    mid_share_count = sum(
+        1 for d in data if d.high_share and 0.3 <= d.high_share < 0.5
+    )
+    high_share_count = sum(1 for d in data if d.high_share and d.high_share >= 0.5)
 
-
-@app.command("optimize")
-def interactive_bid_optimizer(
-    days: Annotated[
-        int,
-        typer.Option("--days", "-d", help="Number of days to analyze (max 30)"),
-    ] = 7,
-    country: Annotated[
-        str | None,
-        typer.Option("--country", "-c", help="Filter by country code"),
-    ] = None,
-    max_share: Annotated[
-        float,
-        typer.Option("--max-share", help="Only optimize keywords below this share %"),
-    ] = 50.0,
-    dry_run: Annotated[
-        bool,
-        typer.Option("--dry-run", help="Show changes without applying them"),
-    ] = False,
-) -> None:
-    """Interactive bid optimizer based on impression share.
-
-    Walks through keywords with low impression share and offers
-    to increase bids to improve exposure. Perfect for SKAG
-    campaigns where each keyword-campaign pair is optimized.
-
-    The optimizer suggests bid increases based on current share:
-    - 0-10% share: 50% bid increase
-    - 10-30% share: 25% bid increase
-    - 30-50% share: 10% bid increase
-
-    Examples:
-        asa impression-share optimize --country US
-        asa impression-share optimize --max-share 30 --dry-run
-    """
-    client = get_client()
-
-    # Validate days - API limits to 30 days max
-    if days > 30:
-        print_warning("Maximum lookback is 30 days, using 30")
-        days = 30
-
-    end_date = date.today() - timedelta(days=1)
-    start_date = end_date - timedelta(days=days - 1)  # -1 because range is inclusive
-
-    country_codes = [country.upper()] if country else None
-
-    # Fetch data
-    with spinner("Creating impression share report..."):
-        try:
-            report = client.custom_reports.get_impression_share(
-                start_date=start_date,
-                end_date=end_date,
-                granularity=GranularityType.DAILY,
-                country_codes=country_codes,
-                poll_interval=3.0,
-                timeout=120.0,
-            )
-        except Exception as e:
-            handle_api_error(e)
-            return
-
-    if not report.row:
-        print_warning("No impression share data available")
-        return
-
-    # Get keyword bid information
-    keywords_by_id: dict[int, dict[str, Any]] = {}
-    keyword_paths: dict[int, tuple[int, int]] = {}  # keyword_id -> (campaign_id, ad_group_id)
-
-    with spinner("Fetching keyword bid data..."):
-        try:
-            campaigns_resp = client.campaigns.list(limit=1000)
-            for camp in campaigns_resp.data:
-                ad_groups_resp = client.campaigns(camp.id).ad_groups.list(limit=1000)
-                for ag in ad_groups_resp.data:
-                    kws_resp = client.campaigns(camp.id).ad_groups(ag.id).keywords.list(
-                        limit=1000
-                    )
-                    for kw in kws_resp.data:
-                        if kw.bid_amount:
-                            keywords_by_id[kw.id] = {
-                                "bid": Decimal(kw.bid_amount.amount),
-                                "currency": kw.bid_amount.currency,
-                            }
-                            keyword_paths[kw.id] = (camp.id, ag.id)
-        except Exception as e:
-            handle_api_error(e)
-            return
-
-    # Parse and filter
-    data = _parse_report_data(report, keywords_by_id)
-    threshold = max_share / 100.0
-    data = [d for d in data if d.high_share is not None and d.high_share < threshold]
-    data = [d for d in data if d.suggested_bid > d.current_bid]
-
-    if not data:
-        print_success("All keywords have good impression share - no optimization needed!")
-        return
-
-    # Sort by share (lowest first)
-    data.sort(key=lambda x: x.high_share or 0)
-
-    print_info(f"\nFound {len(data)} keywords that could benefit from bid increases")
-    console.print()
-
-    updates_made = 0
-    updates_skipped = 0
-
-    for i, kw in enumerate(data, 1):
-        console.print(f"\n[bold cyan]Keyword {i}/{len(data)}[/bold cyan]")
-        console.print(f"  Campaign:  {kw.campaign_name}")
-        console.print(f"  Keyword:   [white]{kw.keyword}[/white]")
-        console.print(f"  Country:   {kw.country}")
-        console.print(f"  Share:     [green]{kw.share_range}[/green]")
-        console.print(f"  Rank:      {kw.rank_str}")
-        console.print(f"  Current:   {kw.bid_str}")
-        console.print(f"  Suggested: [yellow]{kw.suggested_bid_str}[/yellow]")
-
-        if dry_run:
-            console.print("  [dim](dry run - no changes made)[/dim]")
-            continue
-
-        # Interactive prompt
-        action = Prompt.ask(
-            "  Action",
-            choices=["y", "n", "c", "q"],
-            default="n",
-        )
-
-        if action == "q":
-            print_info("Stopping optimization")
-            break
-        elif action == "c":
-            # Custom bid
-            custom = Prompt.ask("  Enter custom bid")
-            try:
-                custom_bid = Decimal(custom)
-                # Apply custom bid
-                if kw.keyword_id in keyword_paths:
-                    camp_id, ag_id = keyword_paths[kw.keyword_id]
-                    from asa_api_client.models import KeywordUpdate, Money
-
-                    client.campaigns(camp_id).ad_groups(ag_id).keywords.update(
-                        kw.keyword_id,
-                        KeywordUpdate(
-                            bid_amount=Money(amount=str(custom_bid), currency=kw.currency)
-                        ),
-                    )
-                    print_success(f"  Updated bid to {custom_bid:.2f} {kw.currency}")
-                    updates_made += 1
-            except Exception as e:
-                print_error("Update failed", str(e))
-        elif action == "y":
-            # Apply suggested bid
-            if kw.keyword_id in keyword_paths:
-                try:
-                    camp_id, ag_id = keyword_paths[kw.keyword_id]
-                    from asa_api_client.models import KeywordUpdate, Money
-
-                    client.campaigns(camp_id).ad_groups(ag_id).keywords.update(
-                        kw.keyword_id,
-                        KeywordUpdate(
-                            bid_amount=Money(
-                                amount=str(kw.suggested_bid), currency=kw.currency
-                            )
-                        ),
-                    )
-                    print_success(f"  Updated bid to {kw.suggested_bid:.2f} {kw.currency}")
-                    updates_made += 1
-                except Exception as e:
-                    print_error("Update failed", str(e))
-        else:
-            updates_skipped += 1
-
-    console.print()
-    print_info(f"Summary: {updates_made} bids updated, {updates_skipped} skipped")
+    print_info(f"\nTotal unique search terms: {len(data)}")
+    print_info(f"  Low share (<30%): {low_share_count} - [red]bid increase suggested[/red]")
+    print_info(f"  Medium share (30-50%): {mid_share_count} - [yellow]consider increase[/yellow]")
+    print_info(f"  High share (50%+): {high_share_count} - [green]performing well[/green]")
 
 
 @app.command("report")
@@ -478,10 +306,10 @@ def generate_share_report(
         typer.Option("--country", "-c", help="Filter by country code"),
     ] = None,
 ) -> None:
-    """Generate impression share report.
+    """Generate a detailed impression share report.
 
-    Creates a detailed report of impression share across all keywords
-    with optional CSV export.
+    Creates a comprehensive report with all search term data including
+    daily breakdown. Use --output to export to CSV for further analysis.
 
     Examples:
         asa impression-share report --days 14 --output share_report.csv
@@ -494,7 +322,7 @@ def generate_share_report(
         days = 30
 
     end_date = date.today() - timedelta(days=1)
-    start_date = end_date - timedelta(days=days - 1)  # -1 because range is inclusive
+    start_date = end_date - timedelta(days=days - 1)
 
     country_codes = [country.upper()] if country else None
 
@@ -513,75 +341,140 @@ def generate_share_report(
             return
 
     if not report.row:
-        print_warning("No data available for the selected period")
+        print_warning("No data available")
         return
 
-    print_success(f"Retrieved {len(report.row)} records")
+    print_success(f"Report generated with {len(report.row)} records")
+
+    data = _parse_report_data(report)
 
     if output:
-        # Export to CSV
         try:
             import csv
 
             with open(output, "w", newline="") as f:
                 writer = csv.writer(f)
-                writer.writerow([
-                    "campaign_id",
-                    "campaign_name",
-                    "ad_group_id",
-                    "ad_group_name",
-                    "keyword_id",
-                    "keyword",
-                    "country",
-                    "low_impression_share",
-                    "high_impression_share",
-                    "rank",
-                    "search_popularity",
-                ])
-
-                for row in report.row:
-                    meta = row.metadata
-                    writer.writerow([
-                        meta.campaign_id,
-                        meta.campaign_name,
-                        meta.ad_group_id,
-                        meta.ad_group_name,
-                        meta.keyword_id,
-                        meta.keyword,
-                        meta.country_or_region,
-                        row.low_impression_share,
-                        row.high_impression_share,
-                        row.rank,
-                        row.search_popularity,
-                    ])
-
-            print_success(f"Report saved to {output}")
+                writer.writerow(
+                    [
+                        "date",
+                        "search_term",
+                        "country",
+                        "low_share",
+                        "high_share",
+                        "rank",
+                        "popularity",
+                        "app_name",
+                        "adam_id",
+                    ]
+                )
+                for row in data:
+                    writer.writerow(
+                        [
+                            row.date,
+                            row.search_term,
+                            row.country,
+                            row.low_share,
+                            row.high_share,
+                            row.rank,
+                            row.search_popularity,
+                            row.app_name,
+                            row.adam_id,
+                        ]
+                    )
+            print_success(f"Exported {len(data)} rows to {output}")
         except Exception as e:
             print_error("Export failed", str(e))
     else:
-        # Display summary table
-        table = Table(title="Impression Share Summary")
-        table.add_column("Campaign", style="cyan")
-        table.add_column("Keyword")
-        table.add_column("Country", style="dim")
-        table.add_column("Share", justify="right", style="green")
-        table.add_column("Rank", justify="center")
+        _display_share_table(data)
 
-        for row in report.row[:50]:  # Limit display
-            meta = row.metadata
-            low = f"{int(row.low_impression_share * 100)}" if row.low_impression_share else "0"
-            high = f"{int(row.high_impression_share * 100)}" if row.high_impression_share else "?"
-            share_range = f"{low}-{high}%"
 
-            table.add_row(
-                (meta.campaign_name or "")[:30],
-                meta.keyword or "",
-                meta.country_or_region or "",
-                share_range,
-                str(row.rank) if row.rank else "-",
+@app.command("summary")
+def share_summary(
+    days: Annotated[
+        int,
+        typer.Option("--days", "-d", help="Number of days to analyze (max 30)"),
+    ] = 7,
+) -> None:
+    """Show impression share summary by country.
+
+    Provides a high-level overview of your impression share performance
+    grouped by country/region.
+
+    Examples:
+        asa impression-share summary --days 14
+    """
+    client = get_client()
+
+    if days > 30:
+        print_warning("Maximum lookback is 30 days, using 30")
+        days = 30
+
+    end_date = date.today() - timedelta(days=1)
+    start_date = end_date - timedelta(days=days - 1)
+
+    with spinner("Generating summary..."):
+        try:
+            report = client.custom_reports.get_impression_share(
+                start_date=start_date,
+                end_date=end_date,
+                granularity=GranularityType.DAILY,
+                poll_interval=3.0,
+                timeout=120.0,
             )
+        except Exception as e:
+            handle_api_error(e)
+            return
 
-        console.print(table)
+    if not report.row:
+        print_warning("No data available")
+        return
 
-        if len(report.row) > 50:
-            print_info(f"\nShowing first 50 of {len(report.row)} records. Use --output to export all.")
+    data = _parse_report_data(report)
+
+    # Aggregate by country
+    by_country: dict[str, list[SearchTermShareData]] = {}
+    for item in data:
+        if item.country not in by_country:
+            by_country[item.country] = []
+        by_country[item.country].append(item)
+
+    table = Table(title=f"Impression Share Summary ({days} days)")
+    table.add_column("Country", style="cyan")
+    table.add_column("Search Terms", justify="right")
+    table.add_column("Avg Share", justify="right")
+    table.add_column("<30%", justify="right", style="red")
+    table.add_column("30-50%", justify="right", style="yellow")
+    table.add_column(">50%", justify="right", style="green")
+
+    # Calculate stats per country
+    summary_rows = []
+    for country, items in by_country.items():
+        unique_terms = len({i.search_term for i in items})
+        avg_shares = [i.avg_share for i in items if i.avg_share > 0]
+        avg_share = sum(avg_shares) / len(avg_shares) if avg_shares else 0
+
+        low_count = sum(1 for i in items if i.high_share and i.high_share < 0.3)
+        mid_count = sum(1 for i in items if i.high_share and 0.3 <= i.high_share < 0.5)
+        high_count = sum(1 for i in items if i.high_share and i.high_share >= 0.5)
+
+        summary_rows.append(
+            (country, unique_terms, avg_share, low_count, mid_count, high_count)
+        )
+
+    # Sort by number of terms
+    summary_rows.sort(key=lambda x: x[1], reverse=True)
+
+    for country, terms, avg, low, mid, high in summary_rows:
+        table.add_row(
+            country,
+            str(terms),
+            f"{avg * 100:.0f}%",
+            str(low),
+            str(mid),
+            str(high),
+        )
+
+    console.print(table)
+
+    total_terms = sum(r[1] for r in summary_rows)
+    print_info(f"\nTotal: {total_terms} unique search terms across {len(by_country)} countries")
