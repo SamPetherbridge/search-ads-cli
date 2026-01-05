@@ -19,6 +19,7 @@ from asa_api_client.models import (
     GranularityType,
     KeywordCreate,
     KeywordMatchType,
+    KeywordUpdate,
     Money,
     NegativeKeywordCreate,
     Selector,
@@ -1044,6 +1045,10 @@ def review_keyword_bids(
         str | None,
         typer.Option("--output", "-o", help="Export to CSV file"),
     ] = None,
+    interactive: Annotated[
+        bool,
+        typer.Option("--interactive", "-i", help="Interactive mode to adjust bids"),
+    ] = False,
 ) -> None:
     """Review keyword bids and their performance.
 
@@ -1061,6 +1066,7 @@ def review_keyword_bids(
         asa optimize bid-review --country AU --weak  # Focus on weak performers
         asa optimize bid-review --days 14 --min-impressions 100
         asa optimize bid-review --output keywords.csv
+        asa optimize bid-review --weak --interactive  # Interactively increase weak bids
     """
     client = get_client()
 
@@ -1101,6 +1107,14 @@ def review_keyword_bids(
 
                         for row in report.row:
                             if not row.metadata.keyword or not row.total:
+                                continue
+                            # Skip if no ad_group_id (needed for updates)
+                            if not row.metadata.ad_group_id:
+                                continue
+                            # Skip paused/deleted keywords and ad groups
+                            if row.metadata.keyword_status and enum_value(row.metadata.keyword_status) != "ACTIVE":
+                                continue
+                            if row.metadata.ad_group_status and enum_value(row.metadata.ad_group_status) != "ENABLED":
                                 continue
 
                             impressions = row.total.impressions or 0
@@ -1269,6 +1283,172 @@ def review_keyword_bids(
                 console.print(
                     f"\n[yellow]💡 {weak} keywords have weak bid strength - consider increasing bids[/yellow]"
                 )
+
+            # Interactive mode for bid adjustments
+            if interactive:
+                # Filter to weak/moderate keywords for interactive adjustment
+                adjustable = [k for k in keyword_analyses if k.bid_strength in ("WEAK", "MODERATE")]
+
+                if not adjustable:
+                    print_info("No weak or moderate keywords to adjust")
+                    return
+
+                console.print()
+                console.rule("[bold]Interactive Bid Adjustment")
+                console.print()
+                console.print("[dim]For each keyword, choose an action:[/dim]")
+                console.print("[dim]  • Enter a number to set new bid (e.g., '2.50')[/dim]")
+                console.print("[dim]  • +N or +N% to increase (e.g., '+0.50' or '+20%')[/dim]")
+                console.print("[dim]  • 's' to skip, 'q' to quit[/dim]")
+                console.print()
+
+                changes_made = 0
+                for i, kw in enumerate(adjustable, 1):
+                    # Skip if missing required IDs
+                    if not kw.ad_group_id or kw.ad_group_id == 0:
+                        continue
+
+                    console.rule(f"[bold]{i}/{len(adjustable)}")
+                    console.print()
+
+                    # Show keyword details
+                    strength_color = "red" if kw.bid_strength == "WEAK" else "yellow"
+                    console.print(f"[bold]Keyword:[/bold] {kw.keyword_text} [dim]ID: {kw.keyword_id}[/dim]")
+                    console.print(
+                        f"[bold]Campaign:[/bold] {kw.campaign_name} ({kw.country}) [dim]ID: {kw.campaign_id}[/dim]"
+                    )
+                    console.print(f"[bold]Ad Group:[/bold] {kw.ad_group_name} [dim]ID: {kw.ad_group_id}[/dim]")
+                    console.print()
+                    console.print(
+                        f"  Current bid:     [{strength_color}]{kw.current_bid:.2f} {kw.currency}[/{strength_color}]"
+                    )
+                    console.print(f"  Impressions:     {kw.impressions:,}")
+                    ttr_display = f"{kw.ttr * 100:.1f}%" if kw.ttr else "—"
+                    console.print(f"  TTR:             {ttr_display}")
+                    console.print(f"  Strength:        [{strength_color}]{kw.bid_strength}[/{strength_color}]")
+                    if kw.avg_cpt:
+                        console.print(f"  Avg CPT:         {kw.avg_cpt:.2f} {kw.currency}")
+                    console.print()
+
+                    # Suggest a new bid (20% increase for weak, 10% for moderate)
+                    if kw.bid_strength == "WEAK":
+                        suggested = round(kw.current_bid * Decimal("1.20"), 2)
+                    else:
+                        suggested = round(kw.current_bid * Decimal("1.10"), 2)
+
+                    console.print(f"[bold]Suggested:[/bold] {suggested:.2f} {kw.currency}")
+                    console.print()
+
+                    action = (
+                        typer.prompt(
+                            "New bid",
+                            default=str(suggested),
+                            show_default=True,
+                        )
+                        .strip()
+                        .lower()
+                    )
+
+                    if action in ("q", "quit"):
+                        print_info("Quitting...")
+                        break
+                    elif action in ("s", "skip", ""):
+                        console.print("[dim]Skipped[/dim]")
+                        console.print()
+                        continue
+
+                    # Parse the new bid
+                    try:
+                        if action.startswith("+"):
+                            # Relative increase
+                            if action.endswith("%"):
+                                pct = Decimal(action[1:-1]) / 100
+                                new_bid = round(kw.current_bid * (1 + pct), 2)
+                            else:
+                                new_bid = kw.current_bid + Decimal(action[1:])
+                        else:
+                            new_bid = Decimal(action)
+
+                        if new_bid <= 0:
+                            print_warning("Invalid bid (must be positive), skipping")
+                            continue
+
+                    except Exception:
+                        print_warning(f"Invalid input '{action}', skipping")
+                        continue
+
+                    # Apply the change
+                    # Fetch keywords from ad group to find matching keyword by text
+                    try:
+                        with spinner("Fetching keywords from ad group..."):
+                            keywords = list(
+                                client.campaigns(kw.campaign_id).ad_groups(kw.ad_group_id).keywords.list(limit=200)
+                            )
+                    except AppleSearchAdsError as e:
+                        print_error(
+                            "Failed to fetch keywords",
+                            f"{e.message} (campaign={kw.campaign_id}, adgroup={kw.ad_group_id})",
+                        )
+                        continue
+
+                    # Find matching ACTIVE keyword by text
+                    actual_keyword = next(
+                        (
+                            k
+                            for k in keywords
+                            if k.text.lower() == kw.keyword_text.lower() and enum_value(k.status) == "ACTIVE"
+                        ),
+                        None,
+                    )
+                    if not actual_keyword:
+                        active_keywords = [k.text for k in keywords if enum_value(k.status) == "ACTIVE"]
+                        sample = active_keywords[:10]
+                        ellipsis = "..." if len(active_keywords) > 10 else ""
+                        print_warning(
+                            f"Keyword '{kw.keyword_text}' not found in ad group "
+                            f"(found {len(active_keywords)} active keywords: {sample}{ellipsis})"
+                        )
+                        continue
+
+                    try:
+                        with spinner(f"Updating keyword {actual_keyword.id}..."):
+                            # Must use bulk endpoint - Apple API doesn't support single keyword PUT
+                            client.campaigns(kw.campaign_id).ad_groups(kw.ad_group_id).keywords.update_bulk(
+                                [
+                                    (
+                                        actual_keyword.id,
+                                        KeywordUpdate(
+                                            bid_amount=Money(
+                                                amount=str(new_bid),
+                                                currency=kw.currency,
+                                            )
+                                        ),
+                                    )
+                                ]
+                            )
+                    except AppleSearchAdsError as e:
+                        print_error("Update failed", f"{e.message} (keyword_id={actual_keyword.id})")
+                        continue
+                    except Exception as e:
+                        print_error("Update failed", str(e))
+                        continue
+
+                    print_success(f"Updated: {kw.current_bid:.2f} → {new_bid:.2f} {kw.currency}")
+                    changes_made += 1
+                    console.print()
+
+                # Summary
+                console.print()
+                if changes_made > 0:
+                    print_result_panel(
+                        "Bid Review Complete",
+                        {
+                            "Keywords reviewed": str(len(adjustable)),
+                            "Bids updated": str(changes_made),
+                        },
+                    )
+                else:
+                    print_info("No changes made")
 
     except AppleSearchAdsError as e:
         handle_api_error(e)
